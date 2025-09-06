@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'pages/auth_page.dart';
-// ignore: unused_import
+
+// Theme & boot
+import 'theme/app_theme.dart';
+import 'features/onboarding/splash_page.dart';
+import 'features/onboarding/onboarding_page.dart';
+
+// Core pages
+import 'features/auth/auth_page.dart';
 import 'pages/home_page.dart';
-import 'pages/request_book_page.dart';
-import 'pages/submit_book_page.dart';
+
+// FAB flows
+import 'features/requests/request_book_page.dart';
+import 'features/requests/submit_book_page.dart';
 
 void main() {
-  // ProviderScope is required to use Riverpod
   runApp(const ProviderScope(child: MyApp()));
 }
 
@@ -19,16 +26,15 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'BookHub',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.white,
-      ),
-      home: const AuthPage(),
-
+      theme: AppTheme.light, // centralized theme (no .withOpacity anywhere)
+      initialRoute: '/splash',
       routes: {
-        "/home": (_) => const HomePage(),
-        "/submitBook": (_) => const SubmitBookPage(),
-        "/requestBook": (_) => const RequestBookPage(),
+        '/splash': (_) => const SplashPage(),
+        '/onboarding': (_) => const OnboardingPage(),
+        '/auth': (_) => const AuthPage(),
+        '/home': (_) => const HomePage(),
+        '/submitBook': (_) => const SubmitBookPage(),
+        '/requestBook': (_) => const RequestBookPage(),
       },
     );
   }

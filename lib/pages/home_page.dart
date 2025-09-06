@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'profile_page.dart';
-import 'search_page.dart';
-import 'saved_page.dart';
-import 'library_page.dart';
-import 'book_details_page.dart';
-import 'categories_page.dart';
+import '../features/profile/profile_page.dart';
+import '../features/books/search_page.dart';
+import '../features/books/saved_page.dart';
+import '../features/books/library_page.dart';
+import '../features/books/book_details_page.dart';
+import '../features/books/categories_page.dart';
+import '../widgets/offline_banner.dart';
 
 // Define your primary green color once for consistency
 const Color _primaryGreen = Color(0xFF4CAF50);
@@ -19,6 +20,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
+  bool _isOffline = false;
 
   // Pages for each bottom nav item
   final List<Widget> _pages = [
@@ -30,6 +32,15 @@ class _HomePageState extends State<HomePage> {
   ];
 
   void _onItemTapped(int index) {
+    // Allow Library (index 3) even when offline; block others
+    if (_isOffline && index != 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You are offline. Only Library is available.'),
+        ),
+      );
+      return; // don't switch
+    }
     setState(() => _selectedIndex = index);
   }
 
@@ -60,7 +71,20 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: _pages[_selectedIndex], // show selected page
+      body: Column(
+        children: [
+          OfflineBanner(
+            onStatusChanged: (isOffline) {
+              setState(() {
+                _isOffline = isOffline;
+                if (isOffline) _selectedIndex = 3; // force Library when offline
+              });
+            },
+          ),
+          Expanded(child: _pages[_selectedIndex]),
+        ],
+      ),
+
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,

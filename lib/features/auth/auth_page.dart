@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:book_hub/auth_provider.dart';
-import 'home_page.dart';
+import 'package:book_hub/features/auth/auth_provider.dart';
+import '../../pages/home_page.dart';
 
 class AuthPage extends ConsumerStatefulWidget {
   const AuthPage({super.key});

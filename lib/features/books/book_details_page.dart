@@ -1,6 +1,8 @@
+// lib/pages/book_details_page.dart
 import 'package:flutter/material.dart';
-import '../managers/saved_books_manager.dart';
-import '../managers/downloaded_books_manager.dart';
+import 'managers/saved_books_manager.dart';
+import 'managers/downloaded_books_manager.dart';
+import 'reader_page.dart';
 
 class BookDetailsPage extends StatefulWidget {
   final String title;
@@ -33,46 +35,59 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
   @override
   void initState() {
     super.initState();
-
-    // ✅ **FIX:** Initialize _chapters first with a safe fallback value.
-    // This guarantees it always has a value before being used.
+    // Always have at least one chapter to show.
     _chapters =
-        widget.chapters != null && widget.chapters!.isNotEmpty
+        (widget.chapters != null && widget.chapters!.isNotEmpty)
             ? widget.chapters!
-            : ["Full Book"];
+            : const ["Full Book"];
 
-    // Now, run the other operation that might fail.
-    isSaved = SavedBooksManager.isBookSaved(widget.title);
+    _loadSavedState();
   }
 
-  void _toggleSave() {
-    setState(() {
-      if (isSaved) {
-        SavedBooksManager.removeBookByTitle(widget.title);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("${widget.title} removed from Saved")),
-        );
-      } else {
-        SavedBooksManager.addBook({
-          "title": widget.title,
-          "author": widget.author,
-          "coverUrl": widget.coverUrl,
-          "rating": widget.rating,
-          "category": widget.category,
-        });
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("${widget.title} saved!")));
-      }
-      isSaved = !isSaved;
-    });
+  Future<void> _loadSavedState() async {
+    final saved = await SavedBooksManager.isBookSaved(widget.title);
+    if (!mounted) return;
+    setState(() => isSaved = saved);
   }
 
   void _openChapter(String chapter) {
-    // Placeholder for opening reader
-    ScaffoldMessenger.of(
+    Navigator.push(
       context,
-    ).showSnackBar(SnackBar(content: Text("Opening $chapter...")));
+      MaterialPageRoute(
+        builder:
+            (_) => ReaderPage(
+              bookTitle: widget.title,
+              chapters: _chapters,
+              initialChapterIndex: _chapters
+                  .indexOf(chapter)
+                  .clamp(0, _chapters.length - 1),
+            ),
+      ),
+    );
+  }
+
+  Future<void> _toggleSave() async {
+    if (isSaved) {
+      await SavedBooksManager.removeBookByTitle(widget.title);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("${widget.title} removed from Saved")),
+      );
+      setState(() => isSaved = false);
+    } else {
+      await SavedBooksManager.addBook({
+        "title": widget.title,
+        "author": widget.author,
+        "coverUrl": widget.coverUrl,
+        "rating": widget.rating,
+        "category": widget.category,
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("${widget.title} saved!")));
+      setState(() => isSaved = true);
+    }
   }
 
   @override
@@ -83,9 +98,17 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
         backgroundColor: Colors.green,
         actions: [
           IconButton(
+            tooltip: isSaved ? "Remove from Saved" : "Save",
+            icon: Icon(
+              isSaved ? Icons.bookmark : Icons.bookmark_outline,
+              color: Colors.white,
+            ),
+            onPressed: _toggleSave,
+          ),
+          IconButton(
             icon: const Icon(Icons.share, color: Colors.white),
             onPressed: () {
-              // TODO: add share logic
+              // TODO: implement share
             },
           ),
         ],
@@ -95,7 +118,7 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 📕 Book Cover + Bookmark Overlay
+            // Cover + overlay bookmark on image
             Center(
               child: Stack(
                 children: [
@@ -107,7 +130,7 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
                       width: 140,
                       fit: BoxFit.cover,
                       errorBuilder:
-                          (context, error, stackTrace) => Container(
+                          (context, _, __) => Container(
                             height: 200,
                             width: 140,
                             color: Colors.grey[300],
@@ -119,24 +142,12 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
                           ),
                     ),
                   ),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: IconButton(
-                      icon: Icon(
-                        isSaved ? Icons.bookmark : Icons.bookmark_outline,
-                        color: Colors.white,
-                      ),
-                      onPressed: _toggleSave,
-                    ),
-                  ),
                 ],
               ),
             ),
 
             const SizedBox(height: 16),
 
-            // 📖 Title & Author
             Text(
               widget.title,
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
@@ -149,7 +160,6 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
 
             const SizedBox(height: 8),
 
-            // ⭐ Rating + Category
             Row(
               children: [
                 const Icon(Icons.star, color: Colors.amber, size: 18),
@@ -168,7 +178,7 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
 
             const SizedBox(height: 20),
 
-            // 🔹 Action Buttons
+            // Actions
             Row(
               children: [
                 Expanded(
@@ -187,15 +197,15 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () {
-                      DownloadedBooksManager.addBook({
+                    onPressed: () async {
+                      await DownloadedBooksManager.addBook({
                         "title": widget.title,
                         "author": widget.author,
                         "coverUrl": widget.coverUrl,
                         "rating": widget.rating,
                         "category": widget.category,
                       });
-
+                      if (!mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text("${widget.title} downloaded!")),
                       );
@@ -214,7 +224,7 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
 
             const SizedBox(height: 24),
 
-            // 📚 Always show chapters
+            // Chapters — always visible
             const Text(
               "Chapters",
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -224,21 +234,19 @@ class _BookDetailsPageState extends State<BookDetailsPage> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: _chapters.length,
-              itemBuilder: (context, index) {
-                return Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.menu_book, color: Colors.green),
-                    title: Text(_chapters[index]),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _openChapter(_chapters[index]),
+              itemBuilder:
+                  (_, i) => Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.menu_book, color: Colors.green),
+                      title: Text(_chapters[i]),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openChapter(_chapters[i]),
+                    ),
                   ),
-                );
-              },
             ),
 
             const SizedBox(height: 24),
 
-            // ℹ️ About This Book
             const Text(
               "About This Book",
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),

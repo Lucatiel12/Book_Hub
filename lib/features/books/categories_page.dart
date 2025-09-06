@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../models/category.dart';
+import '../../models/category.dart';
 import 'category_books_page.dart';
 
 class CategoriesPage extends StatelessWidget {
@@ -47,24 +47,30 @@ class CategoriesPage extends StatelessWidget {
         itemCount: _allCategories.length,
         itemBuilder: (context, index) {
           final category = _allCategories[index];
-          return _buildCategoryCard(context, category);
+          return _CategoryCard(category: category);
         },
       ),
     );
   }
+}
 
-  Widget _buildCategoryCard(BuildContext context, Category category) {
+class _CategoryCard extends StatelessWidget {
+  final Category category;
+  const _CategoryCard({required this.category});
+
+  @override
+  Widget build(BuildContext context) {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
-          // ✅ Navigate to CategoryBooksPage
+          // ✅ Navigate to CategoryBooksPage with the category name
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => CategoryBooksPage(category: category),
+              builder: (_) => CategoryBooksPage(categoryName: category.name),
             ),
           );
         },
@@ -72,7 +78,6 @@ class CategoriesPage extends StatelessWidget {
           padding: const EdgeInsets.all(12.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Icon(category.icon, size: 36, color: Colors.blueAccent),
               const SizedBox(height: 12),
