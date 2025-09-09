@@ -1,5 +1,10 @@
+// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:book_hub/services/storage/shared_prefs_provider.dart';
+import 'package:book_hub/services/notifications/notification_service.dart';
 
 // Theme & boot
 import 'theme/app_theme.dart';
@@ -14,8 +19,25 @@ import 'pages/home_page.dart';
 import 'features/requests/request_book_page.dart';
 import 'features/requests/submit_book_page.dart';
 
-void main() {
-  runApp(const ProviderScope(child: MyApp()));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize local notifications (Android/iOS/macOS)
+  await NotificationService.instance.init();
+
+  // Set up SharedPreferences for Riverpod
+  final sp = await SharedPreferences.getInstance();
+
+  runApp(
+    ProviderScope(
+      overrides: [
+        sharedPrefsProvider.overrideWithValue(sp),
+        // Optionally override LRU cap for downloads:
+        // downloadsMaxBytesProvider.overrideWithValue(500 * 1024 * 1024),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -26,7 +48,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'BookHub',
-      theme: AppTheme.light, // centralized theme (no .withOpacity anywhere)
+      theme: AppTheme.light,
       initialRoute: '/splash',
       routes: {
         '/splash': (_) => const SplashPage(),

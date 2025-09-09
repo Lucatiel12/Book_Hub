@@ -1,13 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:book_hub/services/reader_prefs.dart';
 
-/// In-memory prefs for reader settings (swap with real storage later).
-class _ReaderPrefs {
-  static ReaderThemeMode _theme = ReaderThemeMode.light;
-  static ReaderThemeMode get theme => _theme;
-  static set theme(ReaderThemeMode v) => _theme = v;
-}
-
-enum ReaderThemeMode { light, dark, sepia }
+// Persisted theme options
 
 /// Very small in-memory progress store (swap with shared_prefs/backend later).
 class _ReadingProgress {
@@ -38,14 +32,18 @@ class _ReaderPageState extends State<ReaderPage> {
   late int _chapterIndex;
   double _fontSize = 16;
 
-  // NEW: theme + progress within current chapter
-  ReaderThemeMode _themeMode = _ReaderPrefs.theme;
+  // theme + within-chapter progress
+  ReaderThemeMode _themeMode = ReaderThemeMode.light;
+  Color? _customBg;
+  Color? _customText;
+
   final _scrollController = ScrollController();
   double _chapterScrollProgress = 0.0; // 0..1
 
   @override
   void initState() {
     super.initState();
+
     // Resume where the user left off if we have it; otherwise use the provided index.
     _chapterIndex = _ReadingProgress.getChapter(widget.bookTitle);
     if (_chapterIndex < 0 || _chapterIndex >= widget.chapters.length) {
@@ -53,6 +51,30 @@ class _ReaderPageState extends State<ReaderPage> {
     }
 
     _scrollController.addListener(_onScroll);
+
+    // load persisted prefs
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final mode = await ReaderPrefs.getThemeMode();
+    final fs = await ReaderPrefs.getFontSize();
+
+    Color? cBg, cTx;
+    if (mode == ReaderThemeMode.custom) {
+      final bg = await ReaderPrefs.getCustomBg();
+      final tx = await ReaderPrefs.getCustomText();
+      if (bg != null) cBg = Color(bg);
+      if (tx != null) cTx = Color(tx);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _themeMode = mode;
+      _fontSize = fs;
+      _customBg = cBg;
+      _customText = cTx;
+    });
   }
 
   @override
@@ -65,6 +87,7 @@ class _ReaderPageState extends State<ReaderPage> {
   }
 
   void _onScroll() {
+    if (!_scrollController.hasClients) return;
     final max = _scrollController.position.maxScrollExtent;
     final offset = _scrollController.offset.clamp(0.0, max);
     final p = max > 0 ? (offset / max) : 0.0;
@@ -91,17 +114,47 @@ class _ReaderPageState extends State<ReaderPage> {
     });
   }
 
-  void _pickTheme() async {
-    final picked = await showModalBottomSheet<ReaderThemeMode>(
+  Future<void> _pickTheme() async {
+    final picked = await showModalBottomSheet<_ThemePickResult>(
       context: context,
+      isScrollControlled: true,
       showDragHandle: true,
-      // Keep defaults so Flutter gives the sheet sane constraints
-      builder: (_) => _ThemeSheet(current: _themeMode),
+      useSafeArea: true,
+      builder:
+          (_) => _ThemeSheet(
+            current: _themeMode,
+            currentCustomBg: _customBg,
+            currentCustomText: _customText,
+          ),
     );
-    if (picked != null) {
+
+    if (picked == null || !mounted) return;
+
+    if (picked.mode == ReaderThemeMode.custom) {
+      final bg = picked.customBg ?? Colors.white;
+      final tx = picked.customText ?? Colors.black87;
+
+      // For serialization, .value is the clearest way to get the 32-bit integer.
+      // We ignore the deprecation warning because this is a valid use case.
+      // ignore: deprecated_member_use
+      final int bgValue = bg.value;
+      // ignore: deprecated_member_use
+      final int txValue = tx.value;
+
+      await ReaderPrefs.setCustomColors(bg: bgValue, text: txValue);
+      await ReaderPrefs.setThemeMode(ReaderThemeMode.custom);
+
+      if (!mounted) return;
       setState(() {
-        _themeMode = picked;
-        _ReaderPrefs.theme = picked;
+        _themeMode = ReaderThemeMode.custom;
+        _customBg = bg;
+        _customText = tx;
+      });
+    } else {
+      await ReaderPrefs.setThemeMode(picked.mode);
+      if (!mounted) return;
+      setState(() {
+        _themeMode = picked.mode;
       });
     }
   }
@@ -170,7 +223,10 @@ class _ReaderPageState extends State<ReaderPage> {
                 showDragHandle: true,
                 builder: (_) => _FontSizeSheet(current: _fontSize),
               );
-              if (newSize != null) setState(() => _fontSize = newSize);
+              if (newSize != null) {
+                setState(() => _fontSize = newSize);
+                await ReaderPrefs.setFontSize(newSize);
+              }
             },
           ),
           // Theme
@@ -280,8 +336,21 @@ class _ReaderPageState extends State<ReaderPage> {
         'We keep it super light and selectable for now.';
   }
 
-  // Map theme to actual colors
+  // Map theme to actual colors (includes custom)
   _ReaderColors _themeColors(ReaderThemeMode mode) {
+    if (mode == ReaderThemeMode.custom &&
+        _customBg != null &&
+        _customText != null) {
+      return _ReaderColors(
+        background: _customBg!,
+        surface: _customBg!,
+        text: _customText!,
+        textSecondary: _customText!.withAlpha(180),
+        divider: const Color(0x22000000),
+        progressBg: const Color(0x11000000),
+      );
+    }
+
     switch (mode) {
       case ReaderThemeMode.dark:
         return _ReaderColors(
@@ -381,58 +450,297 @@ class _FontSizeSheetState extends State<_FontSizeSheet> {
   }
 }
 
-class _ThemeSheet extends StatelessWidget {
+class _ThemePickResult {
+  final ReaderThemeMode mode;
+  final Color? customBg;
+  final Color? customText;
+  _ThemePickResult(this.mode, {this.customBg, this.customText});
+}
+
+class _ThemeSheet extends StatefulWidget {
   final ReaderThemeMode current;
-  const _ThemeSheet({required this.current});
+  final Color? currentCustomBg;
+  final Color? currentCustomText;
+
+  const _ThemeSheet({
+    required this.current,
+    this.currentCustomBg,
+    this.currentCustomText,
+  });
 
   @override
+  State<_ThemeSheet> createState() => _ThemeSheetState();
+}
+
+class _ThemeSheetState extends State<_ThemeSheet> {
+  @override
   Widget build(BuildContext context) {
-    Widget tile(ReaderThemeMode mode, String label, Widget swatch) {
-      final selected = mode == current;
+    Widget tile({
+      required Widget leading,
+      required String title,
+      required bool selected,
+      required VoidCallback onTap,
+    }) {
       return ListTile(
-        leading: swatch,
-        title: Text(label),
+        minLeadingWidth: 0,
+        leading: leading,
+        title: Text(title),
         trailing: selected ? const Icon(Icons.check) : null,
-        onTap: () => Navigator.pop(context, mode),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        onTap: onTap,
       );
     }
 
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min, // <-- key line
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Material(
+      color:
+          Theme.of(context).bottomSheetTheme.backgroundColor ??
+          Theme.of(context).colorScheme.surface,
+      child: SafeArea(
+        top: false,
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
             const Center(
-              child: Padding(
-                padding: EdgeInsets.only(bottom: 6),
-                child: Text(
-                  'Theme',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
+              child: Text(
+                'Theme',
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
+            const SizedBox(height: 8),
             tile(
-              ReaderThemeMode.light,
-              'Light',
-              const _Swatch(colors: [Colors.white, Colors.black87]),
+              leading: const _Swatch(colors: [Colors.white, Colors.black87]),
+              title: 'Light',
+              selected: widget.current == ReaderThemeMode.light,
+              onTap:
+                  () => Navigator.pop(
+                    context,
+                    _ThemePickResult(ReaderThemeMode.light),
+                  ),
             ),
             tile(
-              ReaderThemeMode.sepia,
-              'Sepia',
-              const _Swatch(colors: [Color(0xFFFFF7E6), Color(0xFF3F2F1E)]),
+              leading: const _Swatch(
+                colors: [Color(0xFFFFF7E6), Color(0xFF3F2F1E)],
+              ),
+              title: 'Sepia',
+              selected: widget.current == ReaderThemeMode.sepia,
+              onTap:
+                  () => Navigator.pop(
+                    context,
+                    _ThemePickResult(ReaderThemeMode.sepia),
+                  ),
             ),
             tile(
-              ReaderThemeMode.dark,
-              'Dark',
-              const _Swatch(colors: [Color(0xFF111111), Color(0xFFECECEC)]),
+              leading: const _Swatch(
+                colors: [Color(0xFF111111), Color(0xFFECECEC)],
+              ),
+              title: 'Dark',
+              selected: widget.current == ReaderThemeMode.dark,
+              onTap:
+                  () => Navigator.pop(
+                    context,
+                    _ThemePickResult(ReaderThemeMode.dark),
+                  ),
+            ),
+            const Divider(height: 24),
+            // Custom…
+            ListTile(
+              minLeadingWidth: 0,
+              leading: _Swatch(
+                colors: [
+                  widget.currentCustomBg ?? const Color(0xFFF0F0F0),
+                  widget.currentCustomText ?? Colors.black87,
+                ],
+              ),
+              title: const Text('Custom…'),
+              subtitle: const Text('Pick background & text colors'),
+              trailing:
+                  widget.current == ReaderThemeMode.custom
+                      ? const Icon(Icons.check)
+                      : const Icon(Icons.chevron_right),
+              onTap: () async {
+                final res = await showModalBottomSheet<_ThemePickResult>(
+                  context: context,
+                  isScrollControlled: true,
+                  showDragHandle: true,
+                  builder:
+                      (_) => _CustomThemeSheet(
+                        initialBg:
+                            widget.currentCustomBg ?? const Color(0xFFF0F0F0),
+                        initialText: widget.currentCustomText ?? Colors.black87,
+                      ),
+                );
+                // Mounted check added to fix use_build_context_synchronously lint
+                if (!mounted) return;
+                if (res != null) Navigator.pop(context, res);
+              },
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CustomThemeSheet extends StatefulWidget {
+  final Color initialBg;
+  final Color initialText;
+  const _CustomThemeSheet({required this.initialBg, required this.initialText});
+
+  @override
+  State<_CustomThemeSheet> createState() => _CustomThemeSheetState();
+}
+
+class _CustomThemeSheetState extends State<_CustomThemeSheet> {
+  late Color _bg;
+  late Color _tx;
+
+  static const _bgChoices = <Color>[
+    Color(0xFFFFFFFF),
+    Color(0xFFF7F7F7),
+    Color(0xFFFFF7E6),
+    Color(0xFFEFF7EE),
+    Color(0xFF111111),
+  ];
+  static const _txChoices = <Color>[
+    Colors.black87,
+    Color(0xFF3F2F1E),
+    Color(0xFF1B4332),
+    Colors.brown,
+    Colors.white,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _bg = widget.initialBg;
+    _tx = widget.initialText;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Custom Theme',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 12),
+
+              _ColorGrid(
+                label: 'Background',
+                colors: _bgChoices,
+                selected: _bg,
+                onPick: (c) => setState(() => _bg = c),
+              ),
+              const SizedBox(height: 12),
+              _ColorGrid(
+                label: 'Text',
+                colors: _txChoices,
+                selected: _tx,
+                onPick: (c) => setState(() => _tx = c),
+              ),
+              const SizedBox(height: 16),
+
+              // Preview chip
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: _bg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0x22000000)),
+                ),
+                child: Text(
+                  'Aa Preview',
+                  style: TextStyle(
+                    color: _tx,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(
+                      context,
+                      _ThemePickResult(
+                        ReaderThemeMode.custom,
+                        customBg: _bg,
+                        customText: _tx,
+                      ),
+                    );
+                  },
+                  child: const Text('Use this theme'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ColorGrid extends StatelessWidget {
+  final String label;
+  final List<Color> colors;
+  final Color selected;
+  final ValueChanged<Color> onPick;
+  const _ColorGrid({
+    required this.label,
+    required this.colors,
+    required this.selected,
+    required this.onPick,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final c in colors)
+              InkWell(
+                onTap: () => onPick(c),
+                borderRadius: BorderRadius.circular(18),
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: c,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      // Changed .value comparison to direct object comparison
+                      color:
+                          selected == c
+                              ? const Color(0xFF4A6BFE)
+                              : const Color(0x22000000),
+                      width: selected == c ? 2 : 1,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -444,7 +752,8 @@ class _Swatch extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisSize: MainAxisSize.min, // <-- ADD THIS LINE
+      mainAxisSize:
+          MainAxisSize.min, // avoids layout errors in ListTile.leading
       children: [
         for (final c in colors)
           Container(

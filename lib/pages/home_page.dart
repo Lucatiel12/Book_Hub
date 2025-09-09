@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import '../features/profile/profile_page.dart';
-import '../features/books/search_page.dart';
-import '../features/books/saved_page.dart';
-import '../features/books/library_page.dart';
-import '../features/books/book_details_page.dart';
-import '../features/books/categories_page.dart';
+import 'search_page.dart';
+import 'saved_page.dart';
+import 'library_page.dart';
+import 'book_details_page.dart';
+import 'categories_page.dart';
 import '../widgets/offline_banner.dart';
+import 'package:book_hub/features/downloads/downloads_button.dart';
+import 'package:book_hub/features/downloads/download_controller.dart';
 
 // Define your primary green color once for consistency
 const Color _primaryGreen = Color(0xFF4CAF50);
@@ -69,6 +71,7 @@ class _HomePageState extends State<HomePage> {
             ),
             onPressed: () {},
           ),
+          const DownloadsButton(iconColor: Colors.white),
         ],
       ),
       body: Column(

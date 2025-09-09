@@ -1,7 +1,10 @@
+// lib/features/profile/profile_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_provider.dart';
 import '../auth/auth_page.dart';
+import 'package:book_hub/features/settings/settings_page.dart';
+import 'package:book_hub/pages/reading_history_page.dart'; // ✅ add this
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
@@ -98,14 +101,20 @@ class ProfilePage extends ConsumerWidget {
               icon: Icons.settings,
               title: 'Settings',
               onTap: () {
-                // TODO: navigate to SettingsPage
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SettingsPage()),
+                );
               },
             ),
             _buildOptionTile(
               icon: Icons.history,
               title: 'Reading History',
               onTap: () {
-                // TODO: navigate to HistoryPage
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ReadingHistoryPage()),
+                );
               },
             ),
 

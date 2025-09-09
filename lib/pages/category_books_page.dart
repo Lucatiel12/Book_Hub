@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../books/book_details_page.dart';
+import 'book_details_page.dart';
 
 class CategoryBooksPage extends StatefulWidget {
   final String categoryName;

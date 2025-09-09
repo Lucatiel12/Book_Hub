@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/connectivity.dart'; // isOfflineProvider
+import '../core/connectivity.dart'; // isOfflineProvider
 import 'book_details_page.dart';
 
 /// --- Simple book item (kept local for now) ---
