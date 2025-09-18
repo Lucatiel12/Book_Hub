@@ -43,10 +43,15 @@ class SettingsPage extends ConsumerWidget {
             trailing: DropdownButton<int>(
               value: settings.maxConcurrent,
               items:
-                  const [1, 2, 3, 4, 5]
-                      .map((v) => DropdownMenuItem(value: v, child: Text('$v')))
+                  [1, 2, 3, 4, 5]
+                      .map(
+                        (v) =>
+                            DropdownMenuItem<int>(value: v, child: Text('$v')),
+                      )
                       .toList(),
-              onChanged: (v) => v == null ? null : ctrl.setMaxConcurrent(v),
+              onChanged: (v) {
+                if (v != null) ctrl.setMaxConcurrent(v);
+              },
             ),
           ),
         ],

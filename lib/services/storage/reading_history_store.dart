@@ -10,6 +10,17 @@ class ReadingHistoryStore {
   final SharedPreferences _sp;
   ReadingHistoryStore(this._sp);
 
+  Future<int> count() async {
+    final raw = _sp.getString(_kHistoryKey);
+    if (raw == null || raw.isEmpty) return 0;
+    try {
+      final list = HistoryEntry.decodeList(raw);
+      return list.length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Future<List<HistoryEntry>> getAll() async {
     final raw = _sp.getString(_kHistoryKey);
     if (raw == null || raw.isEmpty) return [];

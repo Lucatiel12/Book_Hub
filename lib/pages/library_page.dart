@@ -10,6 +10,10 @@ import 'package:book_hub/features/books/providers/saved_downloaded_providers.dar
 import 'package:book_hub/managers/downloaded_books_manager.dart';
 import 'package:book_hub/services/storage/downloaded_books_store.dart';
 
+// 👇 Add these imports for the reader router
+import 'package:book_hub/reader/reader_models.dart';
+import 'package:book_hub/reader/open_reader.dart';
+
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
 
@@ -98,7 +102,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    // 🔹 Option A: show a progress/status badge under the author/category line
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -113,14 +116,32 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         await ref
                             .read(downloadedBooksManagerProvider)
                             .delete(e.bookId);
+
                         ref.invalidate(downloadedListProvider);
-                        if (!mounted) return;
+
+                        if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text("$title removed from device")),
                         );
                       },
                     ),
-                    onTap: () {
+                    // ✅ Tap to read (EPUB via vocsy, PDF via pdfx)
+                    onTap: () async {
+                      final path = e.path; // absolute local file path
+                      final isEpub = path.toLowerCase().endsWith('.epub');
+
+                      final src = ReaderSource(
+                        bookId: e.bookId,
+                        title: title,
+                        author: author,
+                        path: path,
+                        format: isEpub ? ReaderFormat.epub : ReaderFormat.pdf,
+                      );
+
+                      await ReaderOpener.open(context, src);
+                    },
+                    // (Optional) Long-press for details page you had before
+                    onLongPress: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(

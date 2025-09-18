@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:connectivity_plus/connectivity_plus.dart'; // NEW: for Wi-Fi check
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -12,7 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:book_hub/managers/downloaded_books_manager.dart';
 import 'package:book_hub/services/storage/downloaded_books_store.dart';
 import 'package:book_hub/features/books/providers/saved_downloaded_providers.dart';
-import 'package:book_hub/features/settings/settings_provider.dart'; // NEW
+import 'package:book_hub/features/settings/settings_provider.dart';
 import 'package:book_hub/services/notifications/notification_service.dart';
 import 'package:book_hub/services/permissions/permission_service.dart';
 
@@ -68,15 +68,69 @@ class ActiveDownload {
 
 class DownloadController extends StateNotifier<List<ActiveDownload>> {
   final Ref ref;
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
+
+  // Throttle progress emissions
+  final Map<String, DateTime> _lastProgressEmit = {};
+
   DownloadController(this.ref) : super(const []) {
-    // respect settings.autoRestoreOnLaunch and try auto-resume if applicable
+    // Auto-restore on launch (from settings)
     final autoRestore = ref.read(downloadSettingsProvider).autoRestoreOnLaunch;
     if (autoRestore) {
       unawaited(() async {
         await _restorePendingFromDisk();
-        await _maybeAutoResumeWaitingForWifi(); // <-- added
+        await _maybeAutoResumeWaitingForWifi();
       }());
     }
+
+    // React to connectivity changes (resume when Wi-Fi appears)
+    _connSub = Connectivity().onConnectivityChanged.listen((results) async {
+      final settings = ref.read(downloadSettingsProvider);
+      if (!settings.autoRetry) return;
+      final isWifi = results.contains(ConnectivityResult.wifi);
+      if (isWifi) {
+        await _maybeAutoResumeWaitingForWifi();
+      }
+    });
+
+    // React to settings changes immediately
+    ref.listen(downloadSettingsProvider, (prev, next) {
+      // Concurrency changed → try to fill slots
+      if (prev == null || prev.maxConcurrent != next.maxConcurrent) {
+        _schedule();
+      }
+
+      // Wi-Fi-only toggled
+      if (prev == null || prev.wifiOnly != next.wifiOnly) {
+        Connectivity().checkConnectivity().then((results) {
+          final isWifi = results.contains(ConnectivityResult.wifi);
+          if (next.wifiOnly && !isWifi) {
+            // Pause active downloads and mark reason
+            for (final d in state.where(
+              (x) => x.status == DownloadStatus.downloading,
+            )) {
+              pause(d.bookId);
+              _upsert(
+                d.copyWith(
+                  status: DownloadStatus.paused,
+                  error: 'Waiting for Wi-Fi',
+                ),
+              );
+            }
+          } else {
+            // Wi-Fi available or requirement off → resume queued/paused
+            _maybeAutoResumeWaitingForWifi();
+            _schedule();
+          }
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _connSub?.cancel();
+    super.dispose();
   }
 
   static const List<Duration> _retryDelays = [
@@ -212,17 +266,14 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
   Future<void> _maybeAutoResumeWaitingForWifi() async {
     final settings = ref.read(downloadSettingsProvider);
 
-    // Only auto-resume if the user wants auto-retry
     if (!settings.autoRetry) return;
 
-    // If user requires Wi-Fi, ensure we have Wi-Fi
     if (settings.wifiOnly) {
       final results = await Connectivity().checkConnectivity();
       final isWifi = results.contains(ConnectivityResult.wifi);
       if (!isWifi) return; // still not on Wi-Fi → do nothing
     }
 
-    // Find paused tasks that were paused specifically due to Wi-Fi
     final toResume =
         state
             .where(
@@ -233,7 +284,6 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
             .toList();
 
     for (final d in toResume) {
-      // re-queue with backoff (20s/60s) handled by _runWithRetries
       final fresh = d.copyWith(
         status: DownloadStatus.queued,
         cancelToken: CancelToken(),
@@ -297,13 +347,14 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
       ext: ext,
       cancelToken: CancelToken(),
       progress: 0.0,
-      status: DownloadStatus.queued, // enqueue
+      status: DownloadStatus.queued,
     );
     _upsert(task);
+
     // Ask for Android 13+ notifications permission when user initiates downloads.
     await PermissionService.instance.ensureNotificationPermission();
     await _writeMeta(task);
-    _schedule(); // <--- start if there is capacity
+    _schedule();
   }
 
   Future<void> _runWithRetries(ActiveDownload task) async {
@@ -356,7 +407,7 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
   Future<bool> _attempt(ActiveDownload task) async {
     _upsert(task = task.copyWith(status: DownloadStatus.downloading));
 
-    // Wi-Fi only setting check before hitting the network
+    // Wi-Fi only check before network
     final wifiOnly = ref.read(downloadSettingsProvider).wifiOnly;
     if (wifiOnly) {
       final results = await Connectivity().checkConnectivity();
@@ -373,8 +424,7 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
           task.bookId,
           task.title,
         );
-        _schedule();
-        return false; // not completed; scheduler may retry later
+        return false; // scheduler/backoff will handle later
       }
     }
 
@@ -394,7 +444,15 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
                 if (task.cancelToken.isCancelled) return;
                 if (total > 0) {
                   final pVal = (received / total).clamp(0.0, 1.0);
-                  _upsert(task = task.copyWith(progress: pVal));
+                  final now = DateTime.now();
+                  final last = _lastProgressEmit[task.bookId];
+                  if (last == null ||
+                      now.difference(last).inMilliseconds >= 120 ||
+                      (task.progress == null ||
+                          (pVal - (task.progress ?? 0)).abs() >= 0.01)) {
+                    _lastProgressEmit[task.bookId] = now;
+                    _upsert(task = task.copyWith(progress: pVal));
+                  }
                 } else {
                   _upsert(task = task.copyWith(progress: null));
                 }
@@ -406,7 +464,6 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
           await Future.delayed(const Duration(milliseconds: 80));
           if (task.cancelToken.isCancelled) {
             _upsert(task.copyWith(status: DownloadStatus.paused));
-            _schedule();
             return false;
           }
           _upsert(task = task.copyWith(progress: i / 20));
@@ -439,7 +496,6 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
       ref.invalidate(isBookDownloadedProvider(task.bookId));
       await _removeSidecarAndPart(task.bookId, task.ext);
 
-      // NEW: notify success
       await NotificationService.instance.showCompleted(task.bookId, task.title);
 
       await Future.delayed(const Duration(seconds: 2));
@@ -459,22 +515,24 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
         _upsert(task.copyWith(status: st, error: 'Canceled'));
         return false;
       } else if (_isNetworkError(e)) {
+        // TRANSIENT: keep queued so backoff in _runWithRetries can retry
         _upsert(
           task.copyWith(
-            status: DownloadStatus.paused,
+            status: DownloadStatus.queued,
             error: 'Network error – retrying…',
+            cancelToken: CancelToken(),
           ),
         );
-        _schedule();
         return false;
       } else {
+        // PERMANENT: mark failed and stop
         _upsert(task.copyWith(status: DownloadStatus.failed, error: e.message));
         await NotificationService.instance.showFailed(
           task.bookId,
           task.title,
           reason: e.message,
         );
-        return true; // stop retries on permanent error
+        return true;
       }
     } catch (e) {
       _upsert(task.copyWith(status: DownloadStatus.failed, error: '$e'));

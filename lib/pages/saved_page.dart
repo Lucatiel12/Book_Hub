@@ -71,8 +71,8 @@ class _SavedPageState extends ConsumerState<SavedPage> {
                           icon: const Icon(Icons.delete, color: Colors.red),
                           onPressed: () async {
                             await savedMgr.unsave(title);
-                            setState(() {}); // rebuild list
-                            if (!mounted) return;
+                            setState(() {});
+                            if (!context.mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text("$title removed from Saved"),

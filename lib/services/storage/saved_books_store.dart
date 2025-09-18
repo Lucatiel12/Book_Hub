@@ -42,6 +42,18 @@ class SavedBooksStore {
     final set = getAll()..addAll(legacyIds);
     await _write(set);
   }
+
+  /// NEW: count how many saved books
+  Future<int> count() async {
+    final s = _prefs.getString(_kSavedBooksKey);
+    if (s == null || s.isEmpty) return 0;
+    try {
+      final list = (json.decode(s) as List).cast<String>();
+      return list.length;
+    } catch (_) {
+      return 0;
+    }
+  }
 }
 
 /// Riverpod

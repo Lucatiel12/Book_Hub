@@ -1,10 +1,12 @@
 // lib/features/profile/profile_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../auth/auth_provider.dart';
 import '../auth/auth_page.dart';
 import 'package:book_hub/features/settings/settings_page.dart';
-import 'package:book_hub/pages/reading_history_page.dart'; // ✅ add this
+import 'package:book_hub/pages/reading_history_page.dart';
+import 'package:book_hub/features/profile/profile_stats_provider.dart';
 
 class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
@@ -14,7 +16,7 @@ class ProfilePage extends ConsumerWidget {
     final authState = ref.watch(authProvider);
     final authNotifier = ref.read(authProvider.notifier);
 
-    // Safe fallback values
+    // Safe fallbacks
     final firstName =
         (authState.firstName ?? '').trim().isNotEmpty
             ? authState.firstName!
@@ -30,6 +32,29 @@ class ProfilePage extends ConsumerWidget {
             : 'No email available';
     final role = (authState.role ?? 'USER').trim();
     final isAdmin = role.toUpperCase() == 'ADMIN';
+
+    // Live profile stats
+    final statsAsync = ref.watch(profileStatsProvider);
+    final statsRow = statsAsync.when(
+      data:
+          (s) => Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _ProfileStat(label: 'Saved', value: s.savedCount.toString()),
+              _ProfileStat(
+                label: 'Library',
+                value: s.downloadedCount.toString(),
+              ),
+              _ProfileStat(label: 'History', value: s.historyCount.toString()),
+            ],
+          ),
+      loading:
+          () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: CircularProgressIndicator(),
+          ),
+      error: (_, __) => const Text('Failed to load stats'),
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9F9F9),
@@ -77,15 +102,8 @@ class ProfilePage extends ConsumerWidget {
 
             const SizedBox(height: 20),
 
-            // Quick stats (placeholders)
-            const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _ProfileStat(label: 'Saved', value: '24'),
-                _ProfileStat(label: 'Library', value: '12'),
-                _ProfileStat(label: 'Reviews', value: '8'),
-              ],
-            ),
+            // Quick stats (live)
+            statsRow,
 
             const SizedBox(height: 30),
 
@@ -136,7 +154,6 @@ class ProfilePage extends ConsumerWidget {
                 icon: Icons.inbox_outlined,
                 title: 'Manage Requests',
                 onTap: () {
-                  // TODO: Navigator.pushNamed(context, '/admin/requests');
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Open: Manage Requests')),
                   );
@@ -146,7 +163,6 @@ class ProfilePage extends ConsumerWidget {
                 icon: Icons.fact_check_outlined,
                 title: 'Review Submissions',
                 onTap: () {
-                  // TODO: Navigator.pushNamed(context, '/admin/submissions');
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Open: Review Submissions')),
                   );
@@ -160,13 +176,12 @@ class ProfilePage extends ConsumerWidget {
               color: Colors.red,
               onTap: () async {
                 await authNotifier.logout();
-                if (context.mounted) {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AuthPage()),
-                    (route) => false,
-                  );
-                }
+                if (!context.mounted) return; // guard the same context you use
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AuthPage()),
+                  (route) => false,
+                );
               },
             ),
           ],

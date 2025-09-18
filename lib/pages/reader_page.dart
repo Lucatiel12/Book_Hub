@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:book_hub/services/reader_prefs.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 // Persisted theme options
 
@@ -223,12 +225,16 @@ class _ReaderPageState extends State<ReaderPage> {
                 showDragHandle: true,
                 builder: (_) => _FontSizeSheet(current: _fontSize),
               );
-              if (newSize != null) {
-                setState(() => _fontSize = newSize);
-                await ReaderPrefs.setFontSize(newSize);
-              }
+              if (newSize == null) return;
+
+              if (!mounted) return; // ✅ guard State after async gap
+              setState(() => _fontSize = newSize);
+
+              // Persist (no context use here, so no extra guard needed)
+              await ReaderPrefs.setFontSize(newSize);
             },
           ),
+
           // Theme
           IconButton(
             tooltip: 'Theme',
@@ -569,8 +575,10 @@ class _ThemeSheetState extends State<_ThemeSheet> {
                         initialText: widget.currentCustomText ?? Colors.black87,
                       ),
                 );
-                // Mounted check added to fix use_build_context_synchronously lint
-                if (!mounted) return;
+
+                // Guard the local BuildContext you’re about to use:
+                if (!context.mounted) return;
+
                 if (res != null) Navigator.pop(context, res);
               },
             ),

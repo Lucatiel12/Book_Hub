@@ -14,6 +14,13 @@ import 'package:book_hub/features/books/providers/saved_downloaded_providers.dar
 import 'package:book_hub/managers/saved_books_manager.dart';
 import 'package:book_hub/managers/downloaded_books_manager.dart';
 
+// 👇 NEW: reader router + models
+import 'package:book_hub/reader/open_reader.dart';
+import 'package:book_hub/reader/reader_models.dart';
+
+// 👇 NEW: to fetch local file for this book
+import 'package:book_hub/services/storage/downloaded_books_store.dart';
+
 class BookDetailsPage extends ConsumerStatefulWidget {
   final String title;
   final String author;
@@ -55,9 +62,7 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
     ref
         .read(readingHistoryProvider.notifier)
         .logOpen(
-          bookId:
-              widget
-                  .title, // if you have a stable ID, use that instead of title
+          bookId: widget.title, // TODO: swap to stable server ID later
           title: widget.title,
           author: widget.author,
           coverUrl: widget.coverUrl,
@@ -82,13 +87,45 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
     );
   }
 
+  /// NEW: Try to open the real reader if downloaded; else fall back to mock
+  Future<void> _readNow() async {
+    // 1) Is this book downloaded locally?
+    final store = ref.read(downloadedBooksStoreProvider);
+    final entry = await store.getByBookId(widget.title); // uses title as id
+
+    if (!mounted) return;
+
+    if (entry == null) {
+      // Not downloaded → open mock reader (keeps current behavior)
+      _openChapter(_chapters.first);
+      return;
+    }
+
+    final path = entry.path;
+    final isEpub = path.toLowerCase().endsWith('.epub');
+
+    // 2) Build source + open via router
+    final src = ReaderSource(
+      bookId: entry.bookId,
+      title: entry.title ?? widget.title,
+      author: entry.author ?? widget.author,
+      path: path,
+      format: isEpub ? ReaderFormat.epub : ReaderFormat.pdf,
+    );
+
+    ReaderOpener.open(context, src);
+  }
+
   Future<void> _toggleSave() async {
     await ref.read(savedBooksManagerProvider).toggle(widget.title);
     // Force recompute so the icon updates instantly
     ref.invalidate(isBookSavedProvider(widget.title));
+    if (!mounted) return;
+
+    // (Optional) If you want Profile stats to refresh instantly:
+    // ref.invalidate(profileStatsProvider);
 
     final nowSaved = ref.read(savedBooksManagerProvider).isSaved(widget.title);
-    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -105,7 +142,7 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
     await ref
         .read(downloadControllerProvider.notifier)
         .start(
-          bookId: widget.title, // temp id; swap to server id later
+          bookId: widget.title, // TODO: replace with server ID
           title: widget.title,
           author: widget.author,
           coverUrl: widget.coverUrl,
@@ -125,6 +162,10 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
     await ref.read(downloadedBooksManagerProvider).delete(widget.title);
     ref.invalidate(isBookDownloadedProvider(widget.title));
     if (!mounted) return;
+
+    // (Optional) If you want Profile stats to refresh instantly:
+    // ref.invalidate(profileStatsProvider);
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("${widget.title} removed from device")),
     );
@@ -226,7 +267,8 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => _openChapter(_chapters.first),
+                    onPressed:
+                        _readNow, // 👈 now opens real reader if available
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       padding: const EdgeInsets.symmetric(vertical: 14),

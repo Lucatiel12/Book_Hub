@@ -90,6 +90,17 @@ class DownloadedBooksStore {
 
   DownloadedBooksStore(this._prefs, {required this.maxBytes});
 
+  Future<int> count() async {
+    final idx = await _readIndex();
+    return idx.byBookId.length;
+  }
+
+  // total bytes of all downloads
+  Future<int> totalBytes() async {
+    final idx = await _readIndex();
+    return idx.totalBytes;
+  }
+
   Future<void> init() async {
     final docs = await getApplicationDocumentsDirectory();
     _baseDir = Directory(p.join(docs.path, 'books'));
@@ -129,6 +140,12 @@ class DownloadedBooksStore {
 
   Future<bool> isDownloaded(String bookId) async =>
       (await _readIndex()).byBookId.containsKey(bookId);
+
+  // Look up a downloaded entry by its bookId
+  Future<DownloadEntry?> getByBookId(String bookId) async {
+    final idx = await _readIndex();
+    return idx.byBookId[bookId];
+  }
 
   Future<void> touch(String bookId) async {
     final idx = await _readIndex();
