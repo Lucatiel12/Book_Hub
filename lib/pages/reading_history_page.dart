@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'book_details_page.dart';
-import 'reader_page.dart';
+import '../reader/reader_page.dart';
 
 import 'package:book_hub/features/history/history_provider.dart';
 import 'package:book_hub/models/history_entry.dart';
@@ -117,27 +117,21 @@ class ReadingHistoryPage extends ConsumerWidget {
                           Icons.delete_outline,
                           color: Colors.red,
                         ),
-                        onPressed: () => ctrl.remove(e.bookId),
+                        // 1) In the trailing actions: use a safe id for remove
+                        onPressed: () {
+                          final id = e.bookId.isNotEmpty ? e.bookId : e.title;
+                          ctrl.remove(id);
+                        },
                       ),
                     ],
                   ),
+                  // 2) In the onTap (open details): pass a safe bookId
                   onTap: () {
-                    // Or open book details
+                    final id = e.bookId.isNotEmpty ? e.bookId : e.title;
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder:
-                            (_) => BookDetailsPage(
-                              title: e.title,
-                              author: e.author,
-                              coverUrl: e.coverUrl ?? '',
-                              rating: 0.0,
-                              category: 'History',
-                              description: 'Last opened on $when',
-                              chapters: const [
-                                "Full Book",
-                              ], // if you have actual chapters, pass them
-                            ),
+                        builder: (_) => BookDetailsPage(bookId: id),
                       ),
                     );
                   },

@@ -8,6 +8,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:book_hub/features/profile/profile_stats_provider.dart';
 
 import 'package:book_hub/managers/downloaded_books_manager.dart';
 import 'package:book_hub/services/storage/downloaded_books_store.dart';
@@ -494,6 +495,7 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
         task = task.copyWith(progress: 1.0, status: DownloadStatus.completed),
       );
       ref.invalidate(isBookDownloadedProvider(task.bookId));
+      ref.invalidate(profileStatsProvider);
       await _removeSidecarAndPart(task.bookId, task.ext);
 
       await NotificationService.instance.showCompleted(task.bookId, task.title);

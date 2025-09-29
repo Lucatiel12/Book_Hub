@@ -1,21 +1,37 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:book_hub/services/storage/saved_books_store.dart';
+import 'package:book_hub/features/books/providers/saved_downloaded_providers.dart'; // 👈 bring this in
+import 'package:book_hub/features/profile/profile_stats_provider.dart';
 
 class SavedBooksManager {
-  final SavedBooksStore _store;
-  SavedBooksManager(this._store);
+  SavedBooksManager(this.ref, this.store);
+  final Ref ref;
+  final SavedBooksStore store;
 
-  Set<String> current() => _store.getAll();
-  bool isSaved(String id) => _store.isSaved(id);
+  Future<void> save(String bookId) async {
+    await store.save(bookId);
+    ref.invalidate(isBookSavedProvider(bookId));
+    ref.invalidate(profileStatsProvider);
+  }
 
-  Future<void> toggle(String id) => _store.toggle(id);
-  Future<void> save(String id) => _store.save(id);
-  Future<void> unsave(String id) => _store.unsave(id);
+  Future<void> unsave(String bookId) async {
+    await store.unsave(bookId);
+    ref.invalidate(isBookSavedProvider(bookId));
+    ref.invalidate(profileStatsProvider);
+  }
 
-  Future<void> importLegacy(Iterable<String> ids) => _store.importLegacy(ids);
+  Future<void> toggle(String bookId) async {
+    await store.toggle(bookId);
+    ref.invalidate(isBookSavedProvider(bookId));
+    ref.invalidate(profileStatsProvider);
+  }
+
+  bool isSaved(String bookId) => store.isSaved(bookId);
+
+  Set<String> current() => store.getAll();
 }
 
 final savedBooksManagerProvider = Provider<SavedBooksManager>((ref) {
   final store = ref.watch(savedBooksStoreProvider);
-  return SavedBooksManager(store);
+  return SavedBooksManager(ref, store);
 });

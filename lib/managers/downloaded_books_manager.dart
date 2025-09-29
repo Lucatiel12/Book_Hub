@@ -6,19 +6,31 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:book_hub/services/storage/downloaded_books_store.dart';
+// Invalidate these when downloads change
+import 'package:book_hub/features/books/providers/saved_downloaded_providers.dart';
+import 'package:book_hub/features/profile/profile_stats_provider.dart';
 
 class DownloadedBooksManager {
+  DownloadedBooksManager(this.ref, this._store, this._dio);
+
+  final Ref ref;
   final DownloadedBooksStore _store;
   final Dio _dio;
 
-  DownloadedBooksManager(this._store, this._dio);
-
   Future<bool> isDownloaded(String bookId) => _store.isDownloaded(bookId);
-  Future<void> delete(String bookId) => _store.delete(bookId);
   Future<void> touch(String bookId) => _store.touch(bookId);
   Future<List<DownloadEntry>> list() => _store.list();
 
-  /// Existing simple API (kept for compatibility)
+  /// Delete a downloaded book and refresh dependent providers.
+  Future<void> delete(String bookId) async {
+    await _store.delete(bookId);
+    // Keep UI in sync
+    ref.invalidate(isBookDownloadedProvider(bookId));
+    ref.invalidate(downloadedListProvider);
+    ref.invalidate(profileStatsProvider);
+  }
+
+  /// Simple (non-resumable) download API.
   Future<void> downloadFromUrl({
     required String bookId,
     required String url,
@@ -36,6 +48,7 @@ class DownloadedBooksManager {
       cancelToken: cancelToken,
     );
     final bytes = resp.data ?? <int>[];
+
     await _store.saveBytes(
       bookId: bookId,
       bytes: bytes,
@@ -44,9 +57,14 @@ class DownloadedBooksManager {
       author: author,
       coverUrl: coverUrl,
     );
+
+    // Invalidate after indexing the file
+    ref.invalidate(isBookDownloadedProvider(bookId));
+    ref.invalidate(downloadedListProvider);
+    ref.invalidate(profileStatsProvider);
   }
 
-  /// ✅ Resumable streaming download with .part temp file + Range support.
+  /// Resumable streaming download with .part + Range support.
   Future<void> downloadResumable({
     required String bookId,
     required String url,
@@ -144,14 +162,19 @@ class DownloadedBooksManager {
       author: author,
       coverUrl: coverUrl,
     );
+
+    // Invalidate after indexing the file
+    ref.invalidate(isBookDownloadedProvider(bookId));
+    ref.invalidate(downloadedListProvider);
+    ref.invalidate(profileStatsProvider);
   }
 }
 
-/// Riverpod providers (if not already defined elsewhere)
+/// Riverpod providers
 final dioProvider = Provider<Dio>((ref) => Dio());
 
 final downloadedBooksManagerProvider = Provider<DownloadedBooksManager>((ref) {
   final store = ref.watch(downloadedBooksStoreProvider);
   final dio = ref.watch(dioProvider);
-  return DownloadedBooksManager(store, dio);
+  return DownloadedBooksManager(ref, store, dio);
 });

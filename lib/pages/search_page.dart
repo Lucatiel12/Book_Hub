@@ -1,137 +1,21 @@
-import 'dart:async';
+// lib/pages/search_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/connectivity.dart'; // isOfflineProvider
 import 'book_details_page.dart';
 
-/// --- Simple book item (kept local for now) ---
-class _BookItem {
-  final String title;
-  final String author;
-  final double rating;
-  final String coverUrl;
-  final String category;
-  final List<String>? chapters;
+// backend types
+import 'package:book_hub/backend/book_repository.dart' show UiBook;
+import 'package:book_hub/backend/models/dtos.dart'
+    show CategoryDto, ResourceDto, ResourceType;
 
-  const _BookItem({
-    required this.title,
-    required this.author,
-    required this.rating,
-    required this.coverUrl,
-    required this.category,
-    this.chapters,
-  });
-}
+// search + categories providers
+import 'package:book_hub/features/books/providers/search_providers.dart';
+import 'package:book_hub/features/books/providers/categories_provider.dart';
 
-/// --- Search State ---
-class _SearchState {
-  final bool isLoading;
-  final String query;
-  final List<_BookItem> results;
-  final String? error; // keep for future API errors
-
-  const _SearchState({
-    this.isLoading = false,
-    this.query = '',
-    this.results = const [],
-    this.error,
-  });
-
-  _SearchState copyWith({
-    bool? isLoading,
-    String? query,
-    List<_BookItem>? results,
-    String? error,
-  }) {
-    return _SearchState(
-      isLoading: isLoading ?? this.isLoading,
-      query: query ?? this.query,
-      results: results ?? this.results,
-      error: error,
-    );
-  }
-}
-
-/// --- Search Controller (debounced) ---
-class _SearchController extends StateNotifier<_SearchState> {
-  _SearchController() : super(const _SearchState());
-
-  Timer? _debounce;
-
-  /// Call this from the TextField onChanged
-  void onQueryChanged(String q) {
-    state = state.copyWith(query: q);
-
-    // debounce
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {
-      _performLocalSearch(q);
-    });
-  }
-
-  /// Replace this with a real API later.
-  /// Keep it synchronous & tiny for performance now.
-  void _performLocalSearch(String q) {
-    final query = q.trim().toLowerCase();
-
-    if (query.isEmpty) {
-      state = state.copyWith(results: const [], isLoading: false, error: null);
-      return;
-    }
-
-    state = state.copyWith(isLoading: true, error: null);
-
-    // Minimal mock “dataset”
-    const all = <_BookItem>[
-      _BookItem(
-        title: 'The Great Gatsby',
-        author: 'F. Scott Fitzgerald',
-        rating: 4.5,
-        coverUrl:
-            'https://upload.wikimedia.org/wikipedia/en/f/f7/TheGreatGatsby_1925jacket.jpeg',
-        category: 'Classic Literature',
-        chapters: ['Chapter 1', 'Chapter 2', 'Chapter 3'],
-      ),
-      _BookItem(
-        title: 'Modern Fiction Collection',
-        author: 'Various Authors',
-        rating: 4.7,
-        coverUrl: '',
-        category: 'Fiction',
-      ),
-      _BookItem(
-        title: 'Science Fundamentals',
-        author: 'Dr. Maria Rodriguez',
-        rating: 4.6,
-        coverUrl: '',
-        category: 'Science',
-      ),
-    ];
-
-    // super fast filter
-    final filtered = all
-        .where((b) {
-          return b.title.toLowerCase().contains(query) ||
-              b.author.toLowerCase().contains(query) ||
-              b.category.toLowerCase().contains(query);
-        })
-        .toList(growable: false);
-
-    state = state.copyWith(results: filtered, isLoading: false);
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-}
-
-final _searchProvider =
-    StateNotifierProvider.autoDispose<_SearchController, _SearchState>(
-      (ref) => _SearchController(),
-    );
+// saved / downloaded badges
+import 'package:book_hub/features/books/providers/saved_downloaded_providers.dart';
 
 class SearchPage extends ConsumerWidget {
   const SearchPage({super.key});
@@ -139,8 +23,20 @@ class SearchPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isOffline = ref.watch(isOfflineProvider);
-    final state = ref.watch(_searchProvider);
-    final controller = ref.read(_searchProvider.notifier);
+
+    // typed providers
+    final results = ref.watch(
+      searchResultsProvider,
+    ); // AsyncValue<({List<UiBook> items, int page, int totalPages})>
+    final query = ref.watch(searchQueryProvider);
+    final selectedCategoryId = ref.watch(selectedCategoryIdProvider);
+
+    final cats = ref.watch(categoriesProvider);
+
+    void updateParams(SearchParams Function(SearchParams) f) {
+      final current = ref.read(searchParamsProvider);
+      ref.read(searchParamsProvider.notifier).state = f(current);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -149,119 +45,207 @@ class SearchPage extends ConsumerWidget {
         foregroundColor: Colors.black,
         elevation: 1,
       ),
-      body: RefreshIndicator(
-        onRefresh: () async {
-          // Placeholder for future: refetch page 1 from API
-          // For now, just wait a tick to show the indicator.
-          await Future<void>.delayed(const Duration(milliseconds: 400));
-        },
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            // --- Search bar ---
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: TextField(
-                  enabled: !isOffline,
-                  onChanged: controller.onQueryChanged,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
-                    hintText:
-                        isOffline
-                            ? 'Offline — search is unavailable'
-                            : 'Search books, authors, categories…',
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
+      body: Column(
+        children: [
+          // --- Search bar ---
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: TextField(
+              enabled: !isOffline,
+              onChanged: (text) {
+                updateParams((p) => p.copyWith(query: text, page: 0));
+              },
+              // Don't bind a controller to avoid cursor-jumps; placeholder shows current query.
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText:
+                    isOffline
+                        ? 'Offline — search is unavailable'
+                        : (query.isEmpty
+                            ? 'Search books, authors, categories…'
+                            : 'Searching: "$query"'),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
                 ),
               ),
             ),
+          ),
 
-            // --- Offline banner (inline) ---
-            if (isOffline)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: _InlineInfo(
-                    icon: Icons.wifi_off,
-                    text:
-                        'You are offline. Try again when you have internet connection.',
-                  ),
+          // --- Category chips ---
+          cats.when(
+            data:
+                (list) => _CategoryChips(
+                  list: list,
+                  selectedId: selectedCategoryId,
+                  onSelect:
+                      (id) => updateParams(
+                        (p) => p.copyWith(categoryId: id, page: 0),
+                      ),
                 ),
+            loading: () => const SizedBox(height: 4),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+
+          // --- Offline banner (inline) ---
+          if (isOffline)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: _InlineInfo(
+                icon: Icons.wifi_off,
+                text:
+                    'You are offline. Try again when you have internet connection.',
               ),
+            ),
 
-            // --- Loading indicator ---
-            if (state.isLoading)
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.only(top: 24),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-              ),
+          const SizedBox(height: 8),
 
-            // --- Empty states ---
-            if (!state.isLoading && state.query.isEmpty)
-              const SliverToBoxAdapter(child: _EmptyHint()),
-
-            if (!state.isLoading &&
-                state.query.isNotEmpty &&
-                state.results.isEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 24,
+          // --- Results area ---
+          Expanded(
+            child: results.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error:
+                  (e, _) => ListView(
+                    children: [
+                      const SizedBox(height: 40),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _InlineInfo(
+                          icon: Icons.error_outline,
+                          text: 'Failed to search. $e',
+                        ),
+                      ),
+                    ],
                   ),
-                  child: const _InlineInfo(
-                    icon: Icons.search_off,
-                    text: 'No results. Try another keyword.',
-                  ),
-                ),
-              ),
+              data: (r) {
+                // ✅ Step 3: Properly consume the search results
+                final items = r.items;
+                final page = r.page;
+                final totalPages = r.totalPages;
 
-            // --- Results list ---
-            SliverList.separated(
-              itemCount: state.results.length,
-              separatorBuilder: (_, __) => const Divider(height: 0),
-              itemBuilder: (context, index) {
-                final book = state.results[index];
-                final isLast = index == state.results.length - 1;
-
-                // 👇 Infinite scroll scaffold (ready for API pagination)
-                if (isLast && !state.isLoading) {
-                  // In the future: trigger controller.fetchNextPage()
+                if (query.trim().isEmpty && items.isEmpty) {
+                  return const _EmptyHint();
+                }
+                if (query.trim().isNotEmpty && items.isEmpty) {
+                  return ListView(
+                    children: const [
+                      SizedBox(height: 40),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        child: _InlineInfo(
+                          icon: Icons.search_off,
+                          text: 'No results. Try another keyword.',
+                        ),
+                      ),
+                    ],
+                  );
                 }
 
-                return _BookTile(book: book);
+                return Column(
+                  children: [
+                    Expanded(
+                      child: ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.only(top: 0),
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const Divider(height: 0),
+                        itemBuilder: (context, index) {
+                          final book = items[index];
+                          return _BookTile(book: book);
+                        },
+                      ),
+                    ),
+                    // --- Pagination controls ---
+                    if (totalPages > 1)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Page ${page + 1} of $totalPages',
+                              style: const TextStyle(color: Colors.black54),
+                            ),
+                            Row(
+                              children: [
+                                TextButton.icon(
+                                  icon: const Icon(
+                                    Icons.arrow_back_ios,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Prev'),
+                                  onPressed:
+                                      page > 0
+                                          ? () => updateParams(
+                                            (p) => p.copyWith(page: page - 1),
+                                          )
+                                          : null,
+                                ),
+                                const SizedBox(width: 8),
+                                TextButton.icon(
+                                  icon: const Icon(
+                                    Icons.arrow_forward_ios,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Next'),
+                                  onPressed:
+                                      (page + 1) < totalPages
+                                          ? () => updateParams(
+                                            (p) => p.copyWith(page: page + 1),
+                                          )
+                                          : null,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                );
               },
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _BookTile extends StatelessWidget {
-  final _BookItem book;
+class _BookTile extends ConsumerWidget {
+  final UiBook book;
   const _BookTile({required this.book});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSaved = ref.watch(isBookSavedProvider(book.id));
+    final isDownloadedAsync = ref.watch(isBookDownloadedProvider(book.id));
+
+    // pick best cover (coverUrl or first IMAGE resource)
+    String _thumb() {
+      if ((book.coverUrl ?? '').isNotEmpty) return book.coverUrl!;
+      final img = book.resources.firstWhere(
+        (r) => r.type == ResourceType.IMAGE,
+        orElse:
+            () =>
+                book.resources.isNotEmpty
+                    ? book.resources.first
+                    : ResourceDto(type: ResourceType.DOCUMENT, contentUrl: ''),
+      );
+      return img.contentUrl;
+    }
+
+    final thumb = _thumb();
+
     return ListTile(
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(6),
         child:
-            (book.coverUrl.isNotEmpty)
+            thumb.isNotEmpty
                 ? Image.network(
-                  book.coverUrl,
+                  thumb,
                   width: 46,
                   height: 60,
                   fit: BoxFit.cover,
@@ -275,37 +259,70 @@ class _BookTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontWeight: FontWeight.w600),
       ),
-      subtitle: Text(
-        '${book.author} • ${book.category}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      subtitle: Text(book.author, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.star, size: 16, color: Colors.amber),
-          const SizedBox(width: 4),
-          Text(book.rating.toStringAsFixed(1)),
+          isDownloadedAsync.maybeWhen(
+            data:
+                (d) =>
+                    d
+                        ? const Icon(
+                          Icons.check_circle,
+                          size: 18,
+                          color: Colors.green,
+                        )
+                        : const SizedBox.shrink(),
+            orElse: () => const SizedBox.shrink(),
+          ),
+          if (isSaved)
+            const Padding(
+              padding: EdgeInsets.only(left: 6),
+              child: Icon(Icons.bookmark, size: 18, color: Colors.amber),
+            ),
         ],
       ),
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder:
-                (_) => BookDetailsPage(
-                  title: book.title,
-                  author: book.author,
-                  coverUrl: book.coverUrl,
-                  rating: book.rating,
-                  category: book.category,
-                  chapters: book.chapters,
-                  description:
-                      'Preview description for "${book.title}". Replace with real API content.',
-                ),
-          ),
+          MaterialPageRoute(builder: (_) => BookDetailsPage(bookId: book.id)),
         );
       },
+    );
+  }
+}
+
+class _CategoryChips extends StatelessWidget {
+  final List<CategoryDto> list;
+  final String? selectedId;
+  final void Function(String? id) onSelect;
+  const _CategoryChips({
+    required this.list,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (list.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        scrollDirection: Axis.horizontal,
+        itemBuilder: (_, i) {
+          final c = list[i];
+          final isSel = c.id == selectedId;
+          return ChoiceChip(
+            label: Text('${c.name} (${c.bookCount})'),
+            selected: isSel,
+            onSelected: (v) => onSelect(v ? c.id : null),
+          );
+        },
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemCount: list.length,
+      ),
     );
   }
 }
@@ -332,19 +349,20 @@ class _EmptyHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 48, 16, 0),
-      child: Column(
-        children: const [
-          Icon(Icons.manage_search, size: 48, color: Colors.black38),
-          SizedBox(height: 12),
-          Text(
+    return ListView(
+      children: const [
+        SizedBox(height: 48),
+        Icon(Icons.manage_search, size: 48, color: Colors.black38),
+        SizedBox(height: 12),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
             'Search for books, authors, or categories',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.black54),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

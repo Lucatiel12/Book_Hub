@@ -1,4 +1,6 @@
+// lib/pages/home_page.dart
 import 'package:flutter/material.dart';
+
 import '../features/profile/profile_page.dart';
 import 'search_page.dart';
 import 'saved_page.dart';
@@ -7,11 +9,11 @@ import 'book_details_page.dart';
 import 'categories_page.dart';
 import '../widgets/offline_banner.dart';
 import 'package:book_hub/features/downloads/downloads_button.dart';
-import 'package:book_hub/features/downloads/download_controller.dart';
+import '../backend/book_repository.dart' show UiBook;
 
 // Define your primary green color once for consistency
 const Color _primaryGreen = Color(0xFF4CAF50);
-const Color _lightGreenBackground = Color(0xFFF0FDF0); // A very light green
+const Color _lightGreenBackground = Color(0xFFF0FDF0);
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -24,24 +26,22 @@ class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   bool _isOffline = false;
 
-  // Pages for each bottom nav item
-  final List<Widget> _pages = [
-    const _HomeContent(),
-    const SearchPage(),
-    const SavedPage(),
-    const LibraryPage(),
-    const ProfilePage(),
+  final List<Widget> _pages = const [
+    _HomeContent(),
+    SearchPage(),
+    SavedPage(),
+    LibraryPage(),
+    ProfilePage(),
   ];
 
   void _onItemTapped(int index) {
-    // Allow Library (index 3) even when offline; block others
     if (_isOffline && index != 3) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('You are offline. Only Library is available.'),
         ),
       );
-      return; // don't switch
+      return;
     }
     setState(() => _selectedIndex = index);
   }
@@ -49,7 +49,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _lightGreenBackground, // Light green background
+      backgroundColor: _lightGreenBackground,
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
@@ -63,15 +63,9 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.notifications_outlined,
-              color: Colors.black87,
-            ),
-            onPressed: () {},
-          ),
-          const DownloadsButton(iconColor: Colors.white),
+        actions: const [
+          Icon(Icons.notifications_outlined, color: Colors.black87),
+          DownloadsButton(iconColor: Color.fromARGB(255, 0, 0, 0)),
         ],
       ),
       body: Column(
@@ -80,19 +74,18 @@ class _HomePageState extends State<HomePage> {
             onStatusChanged: (isOffline) {
               setState(() {
                 _isOffline = isOffline;
-                if (isOffline) _selectedIndex = 3; // force Library when offline
+                if (isOffline) _selectedIndex = 3;
               });
             },
           ),
           Expanded(child: _pages[_selectedIndex]),
         ],
       ),
-
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _selectedIndex,
         onTap: _onItemTapped,
-        selectedItemColor: _primaryGreen, // Green selected item
+        selectedItemColor: _primaryGreen,
         unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
@@ -106,7 +99,7 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: _primaryGreen, // Green FAB
+        backgroundColor: _primaryGreen,
         child: const Icon(Icons.add, color: Colors.white),
         onPressed: () {
           showModalBottomSheet(
@@ -121,29 +114,20 @@ class _HomePageState extends State<HomePage> {
                     ListTile(
                       leading: const Icon(
                         Icons.upload_file,
-                        color: _primaryGreen, // Green icon
+                        color: _primaryGreen,
                       ),
                       title: const Text("Submit a Book"),
                       onTap: () {
-                        Navigator.pop(context); // close sheet
-                        Navigator.pushNamed(
-                          context,
-                          "/submitBook",
-                        ); // 👈 route to SubmitBookPage
+                        Navigator.pop(context);
+                        Navigator.pushNamed(context, "/submitBook");
                       },
                     ),
                     ListTile(
-                      leading: const Icon(
-                        Icons.edit,
-                        color: _primaryGreen,
-                      ), // Green icon
+                      leading: const Icon(Icons.edit, color: _primaryGreen),
                       title: const Text("Request a Book"),
                       onTap: () {
                         Navigator.pop(context);
-                        Navigator.pushNamed(
-                          context,
-                          "/requestBook",
-                        ); // 👈 route to RequestBookPage
+                        Navigator.pushNamed(context, "/requestBook");
                       },
                     ),
                   ],
@@ -158,7 +142,7 @@ class _HomePageState extends State<HomePage> {
 }
 
 // ----------------------------
-// 🔹 Home Content (without "Continue Reading")
+// 🔹 Home Content
 // ----------------------------
 class _HomeContent extends StatelessWidget {
   const _HomeContent();
@@ -170,13 +154,9 @@ class _HomeContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 🔍 Search bar
           TextField(
             decoration: InputDecoration(
-              prefixIcon: const Icon(
-                Icons.search,
-                color: _primaryGreen,
-              ), // Green search icon
+              prefixIcon: const Icon(Icons.search, color: _primaryGreen),
               hintText: "Search books, authors...",
               filled: true,
               fillColor: Colors.white,
@@ -189,7 +169,7 @@ class _HomeContent extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // 📊 Stats Row
+          // 📊 Stats
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: const [
@@ -205,7 +185,7 @@ class _HomeContent extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          // ⭐ Featured Books
+          // ⭐ Featured
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -213,10 +193,7 @@ class _HomeContent extends StatelessWidget {
                 "Featured Books",
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
-              Text(
-                "View All",
-                style: TextStyle(color: _primaryGreen),
-              ), // Green "View All"
+              Text("View All", style: TextStyle(color: _primaryGreen)),
             ],
           ),
           const SizedBox(height: 10),
@@ -227,9 +204,18 @@ class _HomeContent extends StatelessWidget {
               itemCount: 3,
               separatorBuilder: (_, __) => const SizedBox(width: 16),
               itemBuilder: (context, index) {
-                return _BookCard(
+                final demoBook = UiBook(
+                  id: 'demo_$index',
                   title: "The Great Gatsby",
                   author: "F. Scott Fitzgerald",
+                  description: "A classic novel",
+                  coverUrl: null,
+                  ebookUrl: null,
+                  categoryIds: const [],
+                  resources: const [],
+                );
+                return _BookCard(
+                  book: demoBook,
                   rating: 4.5,
                   tag: index == 0 ? "Popular" : null,
                 );
@@ -250,14 +236,12 @@ class _HomeContent extends StatelessWidget {
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (context) => const CategoriesPage(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const CategoriesPage()),
                   );
                 },
                 child: const Text(
                   "View All",
-                  style: TextStyle(color: _primaryGreen), // Green "View All"
+                  style: TextStyle(color: _primaryGreen),
                 ),
               ),
             ],
@@ -281,7 +265,7 @@ class _HomeContent extends StatelessWidget {
 }
 
 // ----------------------------
-// 🔹 Small reusable widgets
+// 🔹 Reusable widgets
 // ----------------------------
 class _StatCard extends StatelessWidget {
   final String label;
@@ -300,10 +284,8 @@ class _StatCard extends StatelessWidget {
       children: [
         CircleAvatar(
           radius: 22,
-          backgroundColor: _primaryGreen.withValues(
-            alpha: 0.1,
-          ), // Light green circle
-          child: Icon(icon, color: _primaryGreen), // Green icon
+          backgroundColor: _primaryGreen.withValues(alpha: 0.1),
+          child: Icon(icon, color: _primaryGreen),
         ),
         const SizedBox(height: 5),
         Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -317,17 +299,11 @@ class _StatCard extends StatelessWidget {
 }
 
 class _BookCard extends StatelessWidget {
-  final String title;
-  final String author;
+  final UiBook book;
   final double rating;
   final String? tag;
 
-  const _BookCard({
-    required this.title,
-    required this.author,
-    required this.rating,
-    this.tag,
-  });
+  const _BookCard({required this.book, required this.rating, this.tag});
 
   @override
   Widget build(BuildContext context) {
@@ -335,17 +311,7 @@ class _BookCard extends StatelessWidget {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder:
-                (_) => BookDetailsPage(
-                  title: title,
-                  author: author,
-                  coverUrl:
-                      "https://upload.wikimedia.org/wikipedia/en/f/f7/TheGreatGatsby_1925jacket.jpeg",
-                  rating: rating,
-                  category: "Classic Literature",
-                ),
-          ),
+          MaterialPageRoute(builder: (_) => BookDetailsPage(bookId: book.id)),
         );
       },
       child: Container(
@@ -355,7 +321,7 @@ class _BookCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withValues(alpha: 0.1), // Subtle shadow
+              color: Colors.grey.withValues(alpha: 0.1),
               blurRadius: 5,
               offset: const Offset(0, 3),
             ),
@@ -374,7 +340,7 @@ class _BookCard extends StatelessWidget {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: _primaryGreen, // Green tag
+                    color: _primaryGreen,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -386,25 +352,23 @@ class _BookCard extends StatelessWidget {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
-                  color:
-                      Colors
-                          .grey[200], // Lighter grey for book cover placeholder
+                  color: Colors.grey[200],
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Center(
                   child: Icon(Icons.book, size: 50, color: Colors.grey),
-                ), // Grey book icon
+                ),
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              title,
+              book.title,
               style: const TextStyle(fontWeight: FontWeight.bold),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              author,
+              book.author,
               style: const TextStyle(fontSize: 12, color: Colors.black54),
             ),
             Row(
@@ -437,14 +401,12 @@ class _CategoryTile extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 0, // Remove card elevation for a flatter look
-      color: Colors.white, // Explicitly white background for the card
+      elevation: 0,
+      color: Colors.white,
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: _primaryGreen.withValues(
-            alpha: 0.1,
-          ), // Light green circle
-          child: Icon(icon, color: _primaryGreen), // Green icon
+          backgroundColor: _primaryGreen.withValues(alpha: 0.1),
+          child: Icon(icon, color: _primaryGreen),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text("$books books"),

@@ -1,13 +1,12 @@
-// lib/reader/pdf_reader_page.dart
 import 'package:flutter/material.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'reader_models.dart';
+import 'reader_models.dart' as rm; // 👈 alias
 import 'reader_bookmarks_store.dart';
 
 class PdfReaderPage extends StatefulWidget {
-  final ReaderSource src;
+  final rm.ReaderSource src; // 👈 use alias type
   const PdfReaderPage({super.key, required this.src});
 
   @override
@@ -15,21 +14,28 @@ class PdfReaderPage extends StatefulWidget {
 }
 
 class _PdfReaderPageState extends State<PdfReaderPage> {
-  late PdfControllerPinch _ctrl;
-  late ReaderBookmarksStore _store;
+  late final PdfControllerPinch _ctrl;
+  ReaderBookmarksStore? _store;
+  bool _storeReady = false;
+  int _currentPage = 1;
 
   @override
   void initState() {
     super.initState();
     _ctrl = PdfControllerPinch(document: PdfDocument.openFile(widget.src.path));
-    SharedPreferences.getInstance().then((sp) async {
-      _store = ReaderBookmarksStore(sp);
-      final last = await _store.getLast(widget.src.bookId);
-      if (!mounted) return;
-      if (last?.pdfPage != null) {
-        _ctrl.jumpToPage(last!.pdfPage!);
-      }
-    });
+    _initStoreAndResume();
+  }
+
+  Future<void> _initStoreAndResume() async {
+    final sp = await SharedPreferences.getInstance();
+    _store = ReaderBookmarksStore(sp);
+    final last = await _store!.getLast(widget.src.bookId);
+    if (!mounted) return;
+    if (last?.pdfPage != null && last!.pdfPage! >= 1) {
+      _currentPage = last.pdfPage!;
+      _ctrl.jumpToPage(_currentPage);
+    }
+    setState(() => _storeReady = true);
   }
 
   @override
@@ -39,12 +45,12 @@ class _PdfReaderPageState extends State<PdfReaderPage> {
   }
 
   Future<void> _addBookmark() async {
-    final page = _ctrl.page; // non-nullable; remove ?? 1
-    await _store.add(
-      ReaderBookmark(
+    if (!_storeReady || _store == null) return;
+    await _store!.add(
+      rm.ReaderBookmark(
         bookId: widget.src.bookId,
-        format: ReaderFormat.pdf,
-        pdfPage: page,
+        format: rm.ReaderFormat.pdf,
+        pdfPage: _currentPage,
         pdfOffset: null,
       ),
     );
@@ -55,31 +61,33 @@ class _PdfReaderPageState extends State<PdfReaderPage> {
   }
 
   Future<void> _openBookmarks() async {
-    final items = await _store.list(widget.src.bookId);
+    if (!_storeReady || _store == null) return;
+    final items = await _store!.list(widget.src.bookId);
     if (!mounted) return;
     await showModalBottomSheet(
       context: context,
       showDragHandle: true,
       builder:
-          (_) => ListView.separated(
+          (ctx) => ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             itemCount: items.length,
             separatorBuilder: (_, __) => const Divider(),
             itemBuilder: (ctx, i) {
               final bm = items[i];
-              if (bm.format != ReaderFormat.pdf) return const SizedBox.shrink();
+              if (bm.format != rm.ReaderFormat.pdf)
+                return const SizedBox.shrink();
+              final page = (bm.pdfPage ?? 1).clamp(1, 1 << 20);
               return ListTile(
                 leading: const Icon(Icons.bookmark),
-                title: Text('Page ${bm.pdfPage ?? 1}'),
+                title: Text('Page $page'),
                 onTap: () {
                   Navigator.pop(ctx);
-                  final page = (bm.pdfPage ?? 1).clamp(1, 1 << 20);
                   _ctrl.jumpToPage(page);
                 },
                 trailing: IconButton(
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () async {
-                    await _store.removeAt(widget.src.bookId, i);
+                    await _store!.removeAt(widget.src.bookId, i);
                     if (!context.mounted) return;
                     Navigator.pop(ctx);
                     _openBookmarks();
@@ -88,6 +96,18 @@ class _PdfReaderPageState extends State<PdfReaderPage> {
               );
             },
           ),
+    );
+  }
+
+  Future<void> _persistLastPage(int page) async {
+    if (!_storeReady || _store == null) return;
+    await _store!.setLast(
+      widget.src.bookId,
+      rm.ReaderBookmark(
+        bookId: widget.src.bookId,
+        format: rm.ReaderFormat.pdf,
+        pdfPage: page,
+      ),
     );
   }
 
@@ -112,14 +132,8 @@ class _PdfReaderPageState extends State<PdfReaderPage> {
       body: PdfViewPinch(
         controller: _ctrl,
         onPageChanged: (page) async {
-          await _store.setLast(
-            widget.src.bookId,
-            ReaderBookmark(
-              bookId: widget.src.bookId,
-              format: ReaderFormat.pdf,
-              pdfPage: page,
-            ),
-          );
+          _currentPage = page;
+          await _persistLastPage(page);
         },
       ),
     );

@@ -1,4 +1,3 @@
-// lib/pages/library_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,8 +9,9 @@ import 'package:book_hub/features/books/providers/saved_downloaded_providers.dar
 import 'package:book_hub/managers/downloaded_books_manager.dart';
 import 'package:book_hub/services/storage/downloaded_books_store.dart';
 
-// 👇 Add these imports for the reader router
+// reader router
 import 'package:book_hub/reader/reader_models.dart';
+import 'package:book_hub/features/profile/profile_stats_provider.dart';
 import 'package:book_hub/reader/open_reader.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
@@ -23,7 +23,6 @@ class LibraryPage extends ConsumerStatefulWidget {
 
 class _LibraryPageState extends ConsumerState<LibraryPage> {
   Future<void> _refresh() async {
-    // Re-fetch the downloads list
     ref.invalidate(downloadedListProvider);
   }
 
@@ -34,7 +33,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("My Library (Offline)"),
-        backgroundColor: Colors.blueAccent,
+        backgroundColor: Colors.green,
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
@@ -67,7 +66,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               itemCount: items.length,
               itemBuilder: (context, index) {
                 final DownloadEntry e = items[index];
-                final title = e.title ?? e.bookId;
+                final title = e.title ?? 'Untitled';
                 final author = e.author ?? 'Unknown';
                 final cover = e.coverUrl ?? '';
                 final sizeMb = (e.bytes / (1024 * 1024)).toStringAsFixed(1);
@@ -116,8 +115,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         await ref
                             .read(downloadedBooksManagerProvider)
                             .delete(e.bookId);
-
                         ref.invalidate(downloadedListProvider);
+                        ref.invalidate(profileStatsProvider);
 
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -125,13 +124,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         );
                       },
                     ),
-                    // ✅ Tap to read (EPUB via vocsy, PDF via pdfx)
+                    // ✅ Tap to open reader
                     onTap: () async {
                       final path = e.path; // absolute local file path
                       final isEpub = path.toLowerCase().endsWith('.epub');
 
                       final src = ReaderSource(
-                        bookId: e.bookId,
+                        bookId: e.bookId, // always backend ID
                         title: title,
                         author: author,
                         path: path,
@@ -140,21 +139,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
 
                       await ReaderOpener.open(context, src);
                     },
-                    // (Optional) Long-press for details page you had before
+                    // Long-press → BookDetailsPage by ID
                     onLongPress: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder:
-                              (_) => BookDetailsPage(
-                                title: title,
-                                author: author,
-                                coverUrl: cover,
-                                rating: 0.0,
-                                category: "Downloaded",
-                                description:
-                                    "This is a downloaded book: $title.",
-                              ),
+                          builder: (_) => BookDetailsPage(bookId: e.bookId),
                         ),
                       );
                     },

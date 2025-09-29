@@ -1,6 +1,10 @@
+// lib/pages/category_books_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+
 import 'book_details_page.dart';
+import 'package:book_hub/backend/book_repository.dart' show UiBook;
+import 'package:book_hub/backend/models/dtos.dart' show ResourceDto;
 
 class CategoryBooksPage extends StatefulWidget {
   final String categoryName;
@@ -14,7 +18,7 @@ class _CategoryBooksPageState extends State<CategoryBooksPage> {
   final _scrollController = ScrollController();
 
   // Paging state
-  final List<_SimpleBook> _books = [];
+  final List<UiBook> _books = [];
   bool _isRefreshing = false;
   bool _isLoadingMore = false;
   bool _hasMore = true;
@@ -33,10 +37,9 @@ class _CategoryBooksPageState extends State<CategoryBooksPage> {
       if (_isLoadingMore || !_hasMore) return;
 
       // When within ~2 screens from bottom, start loading next page
-      final threshold = 2 * 600; // ~2 screens worth (rough heuristic)
+      final threshold = 2 * 600; // rough heuristic
       final position = _scrollController.position;
       if (position.pixels + threshold >= position.maxScrollExtent) {
-        // Throttle to avoid duplicate calls
         if (_loadQueued) return;
         _loadQueued = true;
         _fetchPage().whenComplete(() => _loadQueued = false);
@@ -63,7 +66,6 @@ class _CategoryBooksPageState extends State<CategoryBooksPage> {
       _books.clear();
       setState(() {}); // reflect cleared UI quickly
     }
-
     if (!_hasMore) return;
 
     setState(() => _isLoadingMore = true);
@@ -78,7 +80,6 @@ class _CategoryBooksPageState extends State<CategoryBooksPage> {
       pageSize: _pageSize,
     );
 
-    // If fewer than pageSize, assume no more pages
     if (newItems.length < _pageSize) {
       _hasMore = false;
     }
@@ -126,25 +127,19 @@ class _CategoryBooksPageState extends State<CategoryBooksPage> {
                       sliver: SliverGrid(
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3, // compact & efficient
+                              crossAxisCount: 3, // compact
                               mainAxisSpacing: 12,
                               crossAxisSpacing: 12,
                               childAspectRatio: 0.58, // cover-focused layout
                             ),
                         delegate: SliverChildBuilderDelegate((context, i) {
-                          final b = _books[i];
-                          return _BookTile(
-                            title: b.title,
-                            author: b.author,
-                            coverUrl: b.coverUrl,
-                            rating: b.rating,
-                            category: title,
-                          );
+                          final book = _books[i];
+                          return _BookTile(book: book);
                         }, childCount: _books.length),
                       ),
                     ),
 
-                    // Bottom loader / “no more” message
+                    // Bottom loader / "no more" message
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 12),
@@ -174,12 +169,11 @@ class _CategoryBooksPageState extends State<CategoryBooksPage> {
   }
 
   // ---- Mock paginated data generator (replace with API later) ----
-  List<_SimpleBook> _mockBooksFor(
+  List<UiBook> _mockBooksFor(
     String category, {
     required int page,
     required int pageSize,
   }) {
-    // A tiny pool of covers (placeholder images for demo)
     const covers = [
       'https://picsum.photos/200/300?1',
       'https://picsum.photos/200/300?2',
@@ -189,8 +183,7 @@ class _CategoryBooksPageState extends State<CategoryBooksPage> {
       'https://picsum.photos/200/300?6',
     ];
 
-    final seed = category.hashCode.abs();
-    // For demo: pretend there are only ~60 books max per category
+    // Pretend there are ~60 books max per category
     final total = 60;
     final start = (page - 1) * pageSize;
     final end = (start + pageSize).clamp(0, total);
@@ -199,31 +192,25 @@ class _CategoryBooksPageState extends State<CategoryBooksPage> {
 
     return List.generate(end - start, (offset) {
       final i = start + offset;
-      return _SimpleBook(
+      return UiBook(
+        id: '${category}_$i',
         title: '$category Book ${i + 1}',
-        author: 'Author ${(seed + i) % 97}',
+        author: 'Author $i',
+        description: 'Description for $category Book ${i + 1}',
         coverUrl: covers[i % covers.length],
-        rating: 3.5 + (((seed + i) % 15) / 10.0), // 3.5..5.0
+        ebookUrl: null,
+        categoryIds: const [], // mock: no real IDs
+        resources: const <ResourceDto>[], // mock: no resources
       );
     });
   }
 }
 
-// ---- Compact, fast book card ----
+// ---- Compact book card ----
 class _BookTile extends StatelessWidget {
-  final String title;
-  final String author;
-  final String coverUrl;
-  final double rating;
-  final String category;
+  final UiBook book;
 
-  const _BookTile({
-    required this.title,
-    required this.author,
-    required this.coverUrl,
-    required this.rating,
-    required this.category,
-  });
+  const _BookTile({required this.book});
 
   @override
   Widget build(BuildContext context) {
@@ -232,18 +219,7 @@ class _BookTile extends StatelessWidget {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder:
-                (_) => BookDetailsPage(
-                  title: title,
-                  author: author,
-                  coverUrl: coverUrl,
-                  rating: rating,
-                  category: category,
-                  description:
-                      'A placeholder description for "$title" in $category.',
-                ),
-          ),
+          MaterialPageRoute(builder: (_) => BookDetailsPage(bookId: book.id)),
         );
       },
       child: Column(
@@ -254,24 +230,21 @@ class _BookTile extends StatelessWidget {
             aspectRatio: 0.68, // book cover ratio
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                coverUrl,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.low, // perf-friendly
-                errorBuilder:
-                    (_, __, ___) => Container(
-                      color: Colors.grey[300],
-                      child: const Center(
-                        child: Icon(Icons.book, size: 40, color: Colors.grey),
-                      ),
-                    ),
-              ),
+              child:
+                  (book.coverUrl?.isNotEmpty ?? false)
+                      ? Image.network(
+                        book.coverUrl!,
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.low,
+                        errorBuilder: (_, __, ___) => _buildPlaceholder(),
+                      )
+                      : _buildPlaceholder(),
             ),
           ),
           const SizedBox(height: 6),
           // Title
           Text(
-            title,
+            book.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
@@ -279,39 +252,22 @@ class _BookTile extends StatelessWidget {
           const SizedBox(height: 2),
           // Author
           Text(
-            author,
+            book.author,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Colors.black54, fontSize: 11),
-          ),
-          const SizedBox(height: 2),
-          // Rating
-          Row(
-            children: [
-              const Icon(Icons.star, size: 14, color: Colors.amber),
-              const SizedBox(width: 3),
-              Text(
-                rating.toStringAsFixed(1),
-                style: const TextStyle(fontSize: 11.5),
-              ),
-            ],
           ),
         ],
       ),
     );
   }
-}
 
-// ---- Minimal book model for this page ----
-class _SimpleBook {
-  final String title;
-  final String author;
-  final String coverUrl;
-  final double rating;
-  const _SimpleBook({
-    required this.title,
-    required this.author,
-    required this.coverUrl,
-    required this.rating,
-  });
+  Widget _buildPlaceholder() {
+    return Container(
+      color: Colors.grey[300],
+      child: const Center(
+        child: Icon(Icons.book, size: 40, color: Colors.grey),
+      ),
+    );
+  }
 }

@@ -1,93 +1,66 @@
-// lib/reader/open_reader.dart
-import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:vocsy_epub_viewer/epub_viewer.dart';
 
-import 'reader_models.dart';
+import 'reader_models.dart' as rm; // 👈 alias
 import 'reader_bookmarks_store.dart';
-// 👇 add this import for the PDF page
 import 'pdf_reader_page.dart';
+import 'epub_reader_page.dart';
+import 'package:book_hub/services/reader_prefs.dart';
 
 class ReaderOpener {
-  static StreamSubscription? _locatorSub;
-  static String? _latestEpubLocatorJson;
-
-  // ---------------- EPUB ----------------
-  static Future<void> openEpub(BuildContext context, ReaderSource src) async {
-    final sp = await SharedPreferences.getInstance();
-    final store = ReaderBookmarksStore(sp);
-
-    final last = await store.getLast(src.bookId);
-    final String? lastJson = last?.epubLocator;
-
-    EpubLocator? lastLoc;
-    if (lastJson != null && lastJson.isNotEmpty) {
-      final map = json.decode(lastJson) as Map<String, dynamic>;
-      lastLoc = EpubLocator.fromJson(map);
-    }
-
-    VocsyEpub.setConfig(
-      themeColor: Theme.of(context).colorScheme.primary,
-      identifier: src.bookId,
-      scrollDirection: EpubScrollDirection.ALLDIRECTIONS,
-      allowSharing: false,
-      enableTts: false,
-      nightMode: false,
-    );
-
-    await _locatorSub?.cancel();
-    _locatorSub = VocsyEpub.locatorStream.listen((locator) async {
-      try {
-        final locJson = jsonEncode((locator as EpubLocator).toJson());
-        _latestEpubLocatorJson = locJson;
-        await store.setLast(
-          src.bookId,
-          ReaderBookmark(
-            bookId: src.bookId,
-            format: ReaderFormat.epub,
-            epubLocator: locJson,
+  static Future<void> open(BuildContext context, rm.ReaderSource src) async {
+    switch (src.format) {
+      case rm.ReaderFormat.epub:
+        final theme = await ReaderPrefs.getThemeMode();
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder:
+                (_) => EpubReaderPage(
+                  bookId: src.bookId,
+                  filePath: src.path,
+                  theme: theme,
+                ),
           ),
         );
-      } catch (_) {}
-    });
-
-    // returns void – do not await
-    VocsyEpub.open(src.path, lastLocation: lastLoc);
-  }
-
-  /// Optional: call while EPUB is open (locator stream keeps latest location)
-  static Future<void> addEpubBookmark(String bookId) async {
-    final s = await SharedPreferences.getInstance();
-    final store = ReaderBookmarksStore(s);
-    if (_latestEpubLocatorJson == null) return;
-    await store.add(
-      ReaderBookmark(
-        bookId: bookId,
-        format: ReaderFormat.epub,
-        epubLocator: _latestEpubLocatorJson,
-      ),
-    );
-  }
-
-  static Future<void> dispose() async {
-    await _locatorSub?.cancel();
-    _locatorSub = null;
-  }
-
-  // ---------------- ROUTER ----------------
-  static Future<void> open(BuildContext context, ReaderSource src) async {
-    switch (src.format) {
-      case ReaderFormat.epub:
-        await openEpub(context, src);
         break;
-      case ReaderFormat.pdf:
-        // PDF is a Flutter page
+
+      case rm.ReaderFormat.pdf:
         await Navigator.of(
           context,
         ).push(MaterialPageRoute(builder: (_) => PdfReaderPage(src: src)));
         break;
     }
+  }
+
+  // If you keep a "bookmark current EPUB position" button:
+  static Future<void> addEpubBookmark(String bookId, {String? label}) async {
+    final sp = await SharedPreferences.getInstance();
+    final store = ReaderBookmarksStore(sp);
+
+    // EpubReaderPage stores CFI here:
+    final cfi = sp.getString('epub_last_cfi_$bookId');
+    if (cfi == null || cfi.isEmpty) return;
+
+    // Your current model doesn’t have a `cfi` field—store as legacy locator JSON:
+    final locatorJson = jsonEncode({'cfi': cfi});
+
+    await store.add(
+      rm.ReaderBookmark(
+        bookId: bookId,
+        format: rm.ReaderFormat.epub,
+        epubLocator: locatorJson,
+        note: label,
+      ),
+    );
+
+    await store.setLast(
+      bookId,
+      rm.ReaderBookmark(
+        bookId: bookId,
+        format: rm.ReaderFormat.epub,
+        epubLocator: locatorJson,
+      ),
+    );
   }
 }
