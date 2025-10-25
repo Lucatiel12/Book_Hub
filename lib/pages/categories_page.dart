@@ -13,6 +13,13 @@ class CategoriesPage extends ConsumerWidget {
     final l10n = AppLocalizations.of(context)!;
     final catsAsync = ref.watch(categoriesProvider);
 
+    String _countLabel(int? raw) {
+      final n = raw ?? 0;
+      if (n == 0) return 'No books';
+      if (n == 1) return '1 book';
+      return '$n books';
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(l10n.browseCategories),
@@ -74,13 +81,12 @@ class CategoriesPage extends ConsumerWidget {
                 return ListTile(
                   leading: const Icon(Icons.category_outlined),
                   title: Text(c.name),
-                  subtitle:
-                      (c.bookCount != null)
-                          ? Text(l10n.bookCount(c.bookCount!))
-                          : null,
+                  subtitle: Text(
+                    _countLabel(c.bookCount),
+                    style: const TextStyle(color: Colors.black54),
+                  ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
-                    // Use named route; you already wired onGenerateRoute (Option A)
                     Navigator.pushNamed(
                       context,
                       '/categoryBooks',

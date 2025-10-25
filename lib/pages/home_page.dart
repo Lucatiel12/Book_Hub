@@ -10,6 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../backend/book_repository.dart' show UiBook;
 import '../features/profile/profile_page.dart';
+import '../utils/error_text.dart'; // Add import for friendlyError
+import '../widgets/friendly_error.dart'; // Add import for FriendlyError
 import '../widgets/offline_banner.dart';
 import 'book_details_page.dart';
 import 'library_page.dart';
@@ -75,7 +77,7 @@ final featuredOnlyBooksProvider = FutureProvider.autoDispose<List<UiBook>>((
 
   final api = ref.read(apiClientProvider);
 
-  // Ask server to filter, but we’ll still enforce locally.
+  // Ask server to filter, but we'll still enforce locally.
   final page = await api.getBooks(page: 0, size: 100, categoryId: featuredId);
 
   final all = page.content
@@ -499,7 +501,10 @@ class _HomeContent extends ConsumerWidget {
                   error:
                       (e, _) => Padding(
                         padding: const EdgeInsets.only(bottom: 16),
-                        child: Text('Failed to load history: $e'),
+                        child: FriendlyError(
+                          message: friendlyError(e),
+                          onRetry: () => ref.invalidate(readingHistoryProvider),
+                        ),
                       ),
                   data: (items) {
                     if (items.isEmpty) {
@@ -615,7 +620,11 @@ class _HomeContent extends ConsumerWidget {
 
             booksAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Failed to load books: $e')),
+              error:
+                  (e, _) => FriendlyError(
+                    message: friendlyError(e),
+                    onRetry: () => ref.invalidate(featuredOnlyBooksProvider),
+                  ),
               data: (books) {
                 if (featuredId == null) {
                   return const Padding(
@@ -745,9 +754,9 @@ class _HomeContent extends ConsumerWidget {
                     child: Center(child: CircularProgressIndicator()),
                   ),
               error:
-                  (e, _) => Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text('Failed to load categories: $e'),
+                  (e, _) => FriendlyError(
+                    message: friendlyError(e),
+                    onRetry: () => ref.invalidate(categoriesProvider),
                   ),
               data: (cats) {
                 final top = cats.take(3).toList();

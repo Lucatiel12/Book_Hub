@@ -493,14 +493,16 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
             );
       }
 
+      // Mark success before invalidating others
       _upsert(
         task = task.copyWith(progress: 1.0, status: DownloadStatus.completed),
       );
 
-      // Defer cross-invalidations to a microtask (breaks the cycle boundary)
+      // Only invalidate, never read dependent providers
       Future.microtask(() {
         ref.invalidate(isBookDownloadedProvider(task.bookId));
         ref.invalidate(profileStatsProvider);
+        ref.invalidate(downloadedListProvider);
       });
 
       await _removeSidecarAndPart(task.bookId, task.ext);
@@ -534,23 +536,66 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
         );
         return false;
       } else {
-        // PERMANENT: mark failed and stop
-        _upsert(task.copyWith(status: DownloadStatus.failed, error: e.message));
+        // Check if file exists before marking as failed
+        final isOnDevice = await _isOnDevice(task.bookId);
+        if (isOnDevice) {
+          // File exists, mark as completed despite the error
+          _upsert(
+            task.copyWith(progress: 1.0, status: DownloadStatus.completed),
+          );
+          Future.microtask(() {
+            ref.invalidate(isBookDownloadedProvider(task.bookId));
+            ref.invalidate(profileStatsProvider);
+            ref.invalidate(downloadedListProvider);
+          });
+          return true;
+        } else {
+          // PERMANENT: mark failed and stop
+          _upsert(
+            task.copyWith(status: DownloadStatus.failed, error: e.message),
+          );
+          await NotificationService.instance.showFailed(
+            task.bookId,
+            task.title,
+            reason: e.message,
+          );
+          return true;
+        }
+      }
+    } catch (e) {
+      // Check if file exists before marking as failed
+      final isOnDevice = await _isOnDevice(task.bookId);
+      if (isOnDevice) {
+        // File exists, mark as completed despite the error
+        _upsert(task.copyWith(progress: 1.0, status: DownloadStatus.completed));
+        Future.microtask(() {
+          ref.invalidate(isBookDownloadedProvider(task.bookId));
+          ref.invalidate(profileStatsProvider);
+          ref.invalidate(downloadedListProvider);
+        });
+        return true;
+      } else {
+        _upsert(task.copyWith(status: DownloadStatus.failed, error: '$e'));
         await NotificationService.instance.showFailed(
           task.bookId,
           task.title,
-          reason: e.message,
+          reason: '$e',
         );
         return true;
       }
-    } catch (e) {
-      _upsert(task.copyWith(status: DownloadStatus.failed, error: '$e'));
-      await NotificationService.instance.showFailed(
-        task.bookId,
-        task.title,
-        reason: '$e',
-      );
-      return true;
+    }
+  }
+
+  /// Check if file exists on device
+  Future<bool> _isOnDevice(String bookId) async {
+    try {
+      final store = ref.read(downloadedBooksStoreProvider);
+      final entry = await store.getByBookId(bookId);
+      if (entry == null) return false;
+      final file = File(entry.path);
+      return await file.exists();
+    } catch (_) {
+      return false;
     }
   }
 
