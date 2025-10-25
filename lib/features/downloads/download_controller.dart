@@ -594,6 +594,23 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
     _runWithRetries(fresh);
   }
 
+  /// Clear any download state for a specific book (used when book is deleted)
+  void clearFor(String bookId) {
+    final existing = state.firstWhere(
+      (x) => x.bookId == bookId,
+      orElse: () => throw StateError('Download not found'),
+    );
+
+    // Cancel if active
+    if (existing.status == DownloadStatus.downloading) {
+      existing.cancelToken.cancel();
+    }
+
+    // Remove from state
+    _remove(bookId);
+    _schedule();
+  }
+
   void clearCompleted() {
     state = state.where((d) => d.status != DownloadStatus.completed).toList();
   }

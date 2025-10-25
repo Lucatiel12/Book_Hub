@@ -25,7 +25,23 @@ class DownloadedBooksManager {
 
   /// Delete a downloaded book and refresh dependent providers.
   Future<void> delete(String bookId) async {
+    final entry = await _store.getByBookId(bookId);
+
+    // Delete file on disk (best-effort)
+    if (entry != null && entry.path.isNotEmpty) {
+      try {
+        final f = File(entry.path);
+        if (await f.exists()) {
+          await f.delete();
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    // Delete DB row
     await _store.delete(bookId);
+
     // Keep UI in sync
     ref.invalidate(isBookDownloadedProvider(bookId));
     ref.invalidate(downloadedListProvider);

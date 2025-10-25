@@ -16,6 +16,7 @@ import 'package:book_hub/reader/open_reader.dart';
 import 'package:book_hub/reader/reader_models.dart';
 
 import 'package:book_hub/features/profile/profile_stats_provider.dart';
+import 'package:book_hub/features/downloads/download_controller.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
@@ -179,20 +180,91 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         DownloadBadge(bookId: e.bookId),
                       ],
                     ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      onPressed: () async {
-                        await ref
-                            .read(downloadedBooksManagerProvider)
-                            .delete(e.bookId);
-                        ref.invalidate(downloadedListProvider);
-                        ref.invalidate(profileStatsProvider);
+                    trailing: Consumer(
+                      builder: (context, ref, _) {
+                        final deleting = ValueNotifier<bool>(false);
 
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(l10n.bookRemovedFromDevice(title)),
-                          ),
+                        return ValueListenableBuilder<bool>(
+                          valueListenable: deleting,
+                          builder: (context, isDeleting, __) {
+                            return IconButton(
+                              icon:
+                                  isDeleting
+                                      ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                      : const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red,
+                                      ),
+                              onPressed:
+                                  isDeleting
+                                      ? null
+                                      : () async {
+                                        deleting.value = true;
+                                        try {
+                                          // 1) Delete from disk + DB (await it)
+                                          await ref
+                                              .read(
+                                                downloadedBooksManagerProvider,
+                                              )
+                                              .delete(e.bookId);
+
+                                          // 2) Clear any active/failed download state for this book so
+                                          //    the "Failed" badge disappears as well.
+                                          ref
+                                              .read(
+                                                downloadControllerProvider
+                                                    .notifier,
+                                              )
+                                              .clearFor(e.bookId);
+
+                                          // 3) Force the list to refresh and *await* the new data
+                                          ref.invalidate(
+                                            downloadedListProvider,
+                                          );
+                                          await ref.read(
+                                            downloadedListProvider.future,
+                                          );
+
+                                          // 4) Update stats
+                                          ref.invalidate(profileStatsProvider);
+
+                                          if (!mounted) return;
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                l10n.bookRemovedFromDevice(
+                                                  title,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        } catch (err) {
+                                          if (!mounted) return;
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                l10n.errorGeneric(
+                                                  err.toString(),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        } finally {
+                                          deleting.value = false;
+                                        }
+                                      },
+                            );
+                          },
                         );
                       },
                     ),

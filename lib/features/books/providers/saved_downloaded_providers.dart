@@ -14,8 +14,9 @@ final isBookDownloadedProvider = FutureProvider.family<bool, String>((
   ref,
   bookId,
 ) async {
-  final mgr = ref.watch(downloadedBooksManagerProvider);
-  return mgr.isDownloaded(bookId);
+  final store = ref.read(downloadedBooksStoreProvider); // read, not watch
+  final entry = await store.getByBookId(bookId);
+  return entry != null;
 });
 
 /// list downloads for a Downloads screen

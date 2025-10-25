@@ -14,7 +14,9 @@ import 'package:book_hub/services/reader_prefs.dart';
 import 'package:book_hub/services/storage/reading_history_store.dart';
 import 'package:book_hub/models/history_entry.dart';
 
-// Helper to batch progress saves and interact with the repository.
+/// ======================
+///  Session / Progress I/O
+/// ======================
 class _ReaderSession {
   final String bookId;
   final ReadingRepository repo;
@@ -39,7 +41,7 @@ class _ReaderSession {
     }
   }
 
-  // Don't ping backend without a locator; throttle to reduce chatter.
+  /// Throttled to ~10s and requires a valid CFI
   Future<void> onPosition({
     required double percent,
     Map<String, dynamic>? locator,
@@ -81,6 +83,9 @@ class _ReaderSession {
   }
 }
 
+/// ======================
+///  Reader Page
+/// ======================
 class EpubReaderPage extends ConsumerStatefulWidget {
   final String bookId;
 
@@ -123,10 +128,16 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
   String? _savedCfi;
   int _lastChapterIdx = 0;
 
-  // THEME: now editable at runtime
+  // THEME: editable at runtime
   ReaderThemeMode _themeMode = ReaderThemeMode.light;
   Color? _customBg;
   Color? _customText;
+
+  // Typography (persisted)
+  double _fontScale = 1.0; // A-/A+ (0.8 .. 1.6)
+  double _lineHeight = 1.55; // line spacing (1.2 .. 2.0)
+  double _letterSpacing = 0.0; // “word space” proxy
+  TextAlign _textAlign = TextAlign.left;
 
   Timer? _cfiDebounce;
   _ReaderSession? _session;
@@ -149,19 +160,33 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
     super.dispose();
   }
 
-  // 1-based -> 0-based, clamped
+  /// 1-based -> 0-based, clamped (epub_view is 1-based)
   int _zeroBasedChapter(dynamic v, {required int tocLen}) {
-    final raw =
-        ((v?.chapterNumber ?? 1) as num).toInt(); // epub_view is 1-based
+    final raw = ((v?.chapterNumber ?? 1) as num).toInt();
     return raw <= 0 ? 0 : (raw - 1).clamp(0, tocLen > 0 ? tocLen - 1 : 0);
   }
 
   Future<void> _bootstrap() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // restore last pos
     _savedCfi = prefs.getString(_kCfi(widget.bookId));
     _lastChapterIdx =
         prefs.getInt(_kChapter(widget.bookId)) ?? widget.initialChapterIndex;
 
+    // restore typography
+    _fontScale = prefs.getDouble('reader_fontScale') ?? 1.0;
+    _lineHeight = prefs.getDouble('reader_lineHeight') ?? 1.55;
+    _letterSpacing = prefs.getDouble('reader_letterSpacing') ?? 0.0;
+    final alignStr = prefs.getString('reader_textAlign') ?? 'left';
+    _textAlign = switch (alignStr) {
+      'center' => TextAlign.center,
+      'right' => TextAlign.right,
+      'justify' => TextAlign.justify,
+      _ => TextAlign.left,
+    };
+
+    // restore theme (custom colors if any)
     if (_themeMode == ReaderThemeMode.custom) {
       final bg = await ReaderPrefs.getCustomBg();
       final tx = await ReaderPrefs.getCustomText();
@@ -172,7 +197,7 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
     // Build the Future<EpubBook> from the chosen source.
     late final Future<EpubBook> doc;
     if (widget.bytesData != null) {
-      doc = EpubDocument.openData(widget.bytesData!); // LIVE from memory
+      doc = EpubDocument.openData(widget.bytesData!); // live from memory
     } else if (widget.filePath != null) {
       doc = EpubDocument.openFile(File(widget.filePath!));
     } else {
@@ -259,6 +284,19 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
     await prefs.setInt(_kChapter(widget.bookId), index);
   }
 
+  Future<void> _persistTypography() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setDouble('reader_fontScale', _fontScale);
+    await p.setDouble('reader_lineHeight', _lineHeight);
+    await p.setDouble('reader_letterSpacing', _letterSpacing);
+    await p.setString('reader_textAlign', switch (_textAlign) {
+      TextAlign.center => 'center',
+      TextAlign.right => 'right',
+      TextAlign.justify => 'justify',
+      _ => 'left',
+    });
+  }
+
   Map<String, dynamic> _buildLocator(EpubController ctrl, String cfi) {
     final v = ctrl.currentValueListenable.value as dynamic;
     final tocLen = _controller?.tableOfContentsListenable.value.length ?? 0;
@@ -337,7 +375,9 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
   static String _kCfi(String id) => 'epub_last_cfi_$id';
   static String _kChapter(String id) => 'epub_last_chapter_$id';
 
-  // THEME
+  /// ======================
+  ///  Theme mapping
+  /// ======================
   _ReaderChromeColors _mapTheme(BuildContext context) {
     if (_themeMode == ReaderThemeMode.custom &&
         _customBg != null &&
@@ -383,31 +423,36 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
     }
   }
 
-  // Open the theme picker and persist choice
-  Future<void> _pickTheme() async {
+  /// ======================
+  ///  Settings Sheet (Theme + Typography)
+  /// ======================
+  Future<void> _openSettingsSheet() async {
     final picked = await showModalBottomSheet<_ThemePickResult>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       useSafeArea: true,
       builder:
-          (_) => _ThemeSheet(
-            current: _themeMode,
-            currentCustomBg: _customBg,
-            currentCustomText: _customText,
+          (_) => _SettingsSheet(
+            mode: _themeMode,
+            customBg: _customBg,
+            customText: _customText,
+            fontScale: _fontScale,
+            lineHeight: _lineHeight,
+            letterSpacing: _letterSpacing,
+            textAlign: _textAlign,
           ),
     );
 
     if (picked == null || !mounted) return;
 
+    // theme
     if (picked.mode == ReaderThemeMode.custom) {
       final bg = picked.customBg ?? (_customBg ?? const Color(0xFFF0F0F0));
       final tx = picked.customText ?? (_customText ?? Colors.black87);
       // ignore: deprecated_member_use
       await ReaderPrefs.setCustomColors(bg: bg.value, text: tx.value);
       await ReaderPrefs.setThemeMode(ReaderThemeMode.custom);
-
-      if (!mounted) return;
       setState(() {
         _themeMode = ReaderThemeMode.custom;
         _customBg = bg;
@@ -415,11 +460,17 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
       });
     } else {
       await ReaderPrefs.setThemeMode(picked.mode);
-      if (!mounted) return;
-      setState(() {
-        _themeMode = picked.mode;
-      });
+      setState(() => _themeMode = picked.mode);
     }
+
+    // typography
+    setState(() {
+      _fontScale = picked.fontScale ?? _fontScale;
+      _lineHeight = picked.lineHeight ?? _lineHeight;
+      _letterSpacing = picked.letterSpacing ?? _letterSpacing;
+      _textAlign = picked.textAlign ?? _textAlign;
+    });
+    await _persistTypography();
   }
 
   @override
@@ -433,6 +484,11 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
     return Scaffold(
       backgroundColor: c.background,
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
         backgroundColor: c.surface,
         title: EpubViewActualChapter(
           controller: ctrl,
@@ -463,11 +519,10 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
               );
             },
           ),
-          // Theme button
           IconButton(
-            tooltip: 'Theme',
-            icon: const Icon(Icons.palette_outlined),
-            onPressed: _pickTheme,
+            tooltip: 'Settings',
+            icon: const Icon(Icons.tune),
+            onPressed: _openSettingsSheet,
           ),
         ],
       ),
@@ -476,28 +531,37 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
       ),
       body: NotificationListener<ScrollNotification>(
         onNotification: (_) => _onAnyScroll(ctrl),
-        child: DefaultTextStyle.merge(
-          style: TextStyle(color: c.text, height: 1.55),
-          child: EpubView(
-            controller: ctrl,
-            onDocumentLoaded: (_) {},
-            onChapterChanged: (value) {
-              final v = value as dynamic;
-              final tocLen =
-                  _controller?.tableOfContentsListenable.value.length ?? 0;
-              final i0 = _zeroBasedChapter(v, tocLen: tocLen);
-              _persistChapter(i0);
+        child: MediaQuery(
+          // text scale
+          data: MediaQuery.of(context).copyWith(textScaleFactor: _fontScale),
+          child: DefaultTextStyle.merge(
+            style: TextStyle(
+              color: c.text,
+              height: _lineHeight,
+              letterSpacing: _letterSpacing,
+            ),
+            textAlign: _textAlign,
+            child: EpubView(
+              controller: ctrl,
+              onDocumentLoaded: (_) {},
+              onChapterChanged: (value) {
+                final v = value as dynamic;
+                final tocLen =
+                    _controller?.tableOfContentsListenable.value.length ?? 0;
+                final i0 = _zeroBasedChapter(v, tocLen: tocLen);
+                _persistChapter(i0);
 
-              final cfi = ctrl.generateEpubCfi();
-              if (cfi != null && cfi.isNotEmpty) {
-                final s = _session;
-                if (s != null) {
-                  final pct = _getOverallPercentForSession(ctrl);
-                  final loc = {'cfi': cfi, 'chapter': i0};
-                  s.onPosition(percent: pct, locator: loc);
+                final cfi = ctrl.generateEpubCfi();
+                if (cfi != null && cfi.isNotEmpty) {
+                  final s = _session;
+                  if (s != null) {
+                    final pct = _getOverallPercentForSession(ctrl);
+                    final loc = {'cfi': cfi, 'chapter': i0};
+                    s.onPosition(percent: pct, locator: loc);
+                  }
                 }
-              }
-            },
+              },
+            ),
           ),
         ),
       ),
@@ -506,7 +570,9 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
   }
 }
 
-// Bottom bar + color model (unchanged except for progress calc helpers)
+/// ======================
+///  Bottom Bar
+/// ======================
 class _BottomBar extends StatelessWidget {
   final EpubController controller;
   final _ReaderChromeColors colors;
@@ -650,6 +716,9 @@ class _BottomBar extends StatelessWidget {
   }
 }
 
+/// ======================
+///  Chrome Colors
+/// ======================
 class _ReaderChromeColors {
   final Color background;
   final Color surface;
@@ -667,106 +736,238 @@ class _ReaderChromeColors {
   });
 }
 
-/// ===== Theme picker UI (private) =====
+/// ======================
+///  Settings + Theme UI
+/// ======================
 
 class _ThemePickResult {
   final ReaderThemeMode mode;
   final Color? customBg;
   final Color? customText;
-  _ThemePickResult(this.mode, {this.customBg, this.customText});
+
+  // typography
+  final double? fontScale;
+  final double? lineHeight;
+  final double? letterSpacing;
+  final TextAlign? textAlign;
+
+  _ThemePickResult(
+    this.mode, {
+    this.customBg,
+    this.customText,
+    this.fontScale,
+    this.lineHeight,
+    this.letterSpacing,
+    this.textAlign,
+  });
 }
 
-class _ThemeSheet extends StatelessWidget {
-  final ReaderThemeMode current;
-  final Color? currentCustomBg;
-  final Color? currentCustomText;
-  const _ThemeSheet({
-    required this.current,
-    this.currentCustomBg,
-    this.currentCustomText,
+class _SettingsSheet extends StatefulWidget {
+  final ReaderThemeMode mode;
+  final Color? customBg;
+  final Color? customText;
+
+  final double fontScale;
+  final double lineHeight;
+  final double letterSpacing;
+  final TextAlign textAlign;
+
+  const _SettingsSheet({
+    required this.mode,
+    this.customBg,
+    this.customText,
+    required this.fontScale,
+    required this.lineHeight,
+    required this.letterSpacing,
+    required this.textAlign,
   });
 
   @override
-  Widget build(BuildContext context) {
-    Widget tile({
-      required Widget leading,
-      required String title,
-      required bool selected,
-      required VoidCallback onTap,
-    }) {
-      return ListTile(
-        minLeadingWidth: 0,
-        leading: leading,
-        title: Text(title),
-        trailing: selected ? const Icon(Icons.check) : null,
-        onTap: onTap,
-      );
-    }
+  State<_SettingsSheet> createState() => _SettingsSheetState();
+}
 
+class _SettingsSheetState extends State<_SettingsSheet> {
+  late ReaderThemeMode _mode;
+  Color? _bg;
+  Color? _tx;
+
+  late double _fontScale;
+  late double _lineHeight;
+  late double _letterSpacing;
+  late TextAlign _textAlign;
+
+  @override
+  void initState() {
+    super.initState();
+    _mode = widget.mode;
+    _bg = widget.customBg;
+    _tx = widget.customText;
+
+    _fontScale = widget.fontScale;
+    _lineHeight = widget.lineHeight;
+    _letterSpacing = widget.letterSpacing;
+    _textAlign = widget.textAlign;
+  }
+
+  Widget _tile({
+    required Widget leading,
+    required String title,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      minLeadingWidth: 0,
+      leading: leading,
+      title: Text(title),
+      trailing: selected ? const Icon(Icons.check) : null,
+      onTap: onTap,
+    );
+  }
+
+  void _finish() {
+    Navigator.pop(
+      context,
+      _ThemePickResult(
+        _mode,
+        customBg: _bg,
+        customText: _tx,
+        fontScale: _fontScale,
+        lineHeight: _lineHeight,
+        letterSpacing: _letterSpacing,
+        textAlign: _textAlign,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
-      color:
-          Theme.of(context).bottomSheetTheme.backgroundColor ??
-          Theme.of(context).colorScheme.surface,
+      color: Theme.of(context).colorScheme.surface,
       child: SafeArea(
         top: false,
         child: ListView(
           shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
           children: [
-            const Center(
+            Center(
               child: Text(
-                'Theme',
-                style: TextStyle(fontWeight: FontWeight.w600),
+                'Reader settings',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
             const SizedBox(height: 8),
-            tile(
-              leading: const _Swatch(colors: [Colors.white, Colors.black87]),
-              title: 'Light',
-              selected: current == ReaderThemeMode.light,
-              onTap:
-                  () => Navigator.pop(
-                    context,
-                    _ThemePickResult(ReaderThemeMode.light),
-                  ),
+
+            // Text size
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: const [Text('Text size'), Text('A-        A+')],
             ),
-            tile(
+            Slider(
+              value: _fontScale,
+              min: 0.8,
+              max: 1.6,
+              onChanged: (v) => setState(() => _fontScale = v),
+            ),
+            const SizedBox(height: 8),
+
+            // Line space
+            const Text('Line space'),
+            Slider(
+              value: _lineHeight,
+              min: 1.2,
+              max: 2.0,
+              onChanged: (v) => setState(() => _lineHeight = v),
+            ),
+            const SizedBox(height: 8),
+
+            // “Word space” (letter spacing)
+            const Text('Word space'),
+            Slider(
+              value: _letterSpacing,
+              min: 0.0,
+              max: 1.5,
+              onChanged: (v) => setState(() => _letterSpacing = v),
+            ),
+            const SizedBox(height: 8),
+
+            // Paragraph space (not supported)
+            Opacity(
+              opacity: 0.5,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text('Paragraph space (not supported)'),
+                  Slider(value: 0.0, min: 0.0, max: 1.0, onChanged: null),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Alignment
+            const Text('Text alignment'),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _AlignBtn(
+                  icon: Icons.format_align_left,
+                  selected: _textAlign == TextAlign.left,
+                  onTap: () => setState(() => _textAlign = TextAlign.left),
+                ),
+                const SizedBox(width: 10),
+                _AlignBtn(
+                  icon: Icons.format_align_center,
+                  selected: _textAlign == TextAlign.center,
+                  onTap: () => setState(() => _textAlign = TextAlign.center),
+                ),
+                const SizedBox(width: 10),
+                _AlignBtn(
+                  icon: Icons.format_align_justify,
+                  selected: _textAlign == TextAlign.justify,
+                  onTap: () => setState(() => _textAlign = TextAlign.justify),
+                ),
+                const SizedBox(width: 10),
+                _AlignBtn(
+                  icon: Icons.format_align_right,
+                  selected: _textAlign == TextAlign.right,
+                  onTap: () => setState(() => _textAlign = TextAlign.right),
+                ),
+              ],
+            ),
+
+            const Divider(height: 24),
+
+            // Page themes
+            const Text('Page themes'),
+            _tile(
+              leading: const _Swatch(colors: [Colors.white, Colors.black87]),
+              title: 'White',
+              selected: _mode == ReaderThemeMode.light,
+              onTap: () => setState(() => _mode = ReaderThemeMode.light),
+            ),
+            _tile(
               leading: const _Swatch(
                 colors: [Color(0xFFFFF7E6), Color(0xFF3F2F1E)],
               ),
               title: 'Sepia',
-              selected: current == ReaderThemeMode.sepia,
-              onTap:
-                  () => Navigator.pop(
-                    context,
-                    _ThemePickResult(ReaderThemeMode.sepia),
-                  ),
+              selected: _mode == ReaderThemeMode.sepia,
+              onTap: () => setState(() => _mode = ReaderThemeMode.sepia),
             ),
-            tile(
+            _tile(
               leading: const _Swatch(
                 colors: [Color(0xFF111111), Color(0xFFECECEC)],
               ),
-              title: 'Dark',
-              selected: current == ReaderThemeMode.dark,
-              onTap:
-                  () => Navigator.pop(
-                    context,
-                    _ThemePickResult(ReaderThemeMode.dark),
-                  ),
+              title: 'Night',
+              selected: _mode == ReaderThemeMode.dark,
+              onTap: () => setState(() => _mode = ReaderThemeMode.dark),
             ),
-            const Divider(height: 24),
             ListTile(
               minLeadingWidth: 0,
               leading: _Swatch(
-                colors: [
-                  currentCustomBg ?? const Color(0xFFF0F0F0),
-                  currentCustomText ?? Colors.black87,
-                ],
+                colors: [_bg ?? const Color(0xFFF0F0F0), _tx ?? Colors.black87],
               ),
-              title: const Text('Custom...'),
-              subtitle: const Text('Pick background & text colors'),
+              title: const Text('Custom…'),
               trailing:
-                  current == ReaderThemeMode.custom
+                  _mode == ReaderThemeMode.custom
                       ? const Icon(Icons.check)
                       : const Icon(Icons.chevron_right),
               onTap: () async {
@@ -776,13 +977,28 @@ class _ThemeSheet extends StatelessWidget {
                   showDragHandle: true,
                   builder:
                       (_) => _CustomThemeSheet(
-                        initialBg: currentCustomBg ?? const Color(0xFFF0F0F0),
-                        initialText: currentCustomText ?? Colors.black87,
+                        initialBg: _bg ?? const Color(0xFFF0F0F0),
+                        initialText: _tx ?? Colors.black87,
                       ),
                 );
-                if (!context.mounted) return;
-                if (res != null) Navigator.pop(context, res);
+                if (!mounted) return;
+                if (res != null) {
+                  setState(() {
+                    _mode = ReaderThemeMode.custom;
+                    _bg = res.customBg;
+                    _tx = res.customText;
+                  });
+                }
               },
+            ),
+
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _finish,
+                child: const Text('Apply'),
+              ),
             ),
           ],
         ),
@@ -791,6 +1007,32 @@ class _ThemeSheet extends StatelessWidget {
   }
 }
 
+class _AlignBtn extends StatelessWidget {
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _AlignBtn({
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(color: selected ? Colors.green : Colors.black26),
+          backgroundColor:
+              selected ? Colors.green.withOpacity(.08) : Colors.transparent,
+        ),
+        child: Icon(icon),
+      ),
+    );
+  }
+}
+
+/// Custom theme picker (colors only), used from Settings sheet
 class _CustomThemeSheet extends StatefulWidget {
   final Color initialBg;
   final Color initialText;
