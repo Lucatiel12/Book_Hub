@@ -1,5 +1,6 @@
 // lib/pages/search_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/connectivity.dart'; // isOfflineProvider
@@ -22,6 +23,7 @@ class SearchPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
     final isOffline = ref.watch(isOfflineProvider);
 
     // typed providers
@@ -40,7 +42,7 @@ class SearchPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Search'),
+        title: Text(l10n.search),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 1,
@@ -55,15 +57,14 @@ class SearchPage extends ConsumerWidget {
               onChanged: (text) {
                 updateParams((p) => p.copyWith(query: text, page: 0));
               },
-              // Don't bind a controller to avoid cursor-jumps; placeholder shows current query.
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
                 hintText:
                     isOffline
-                        ? 'Offline — search is unavailable'
+                        ? l10n.searchOfflineUnavailable
                         : (query.isEmpty
-                            ? 'Search books, authors, categories…'
-                            : 'Searching: "$query"'),
+                            ? l10n.searchHint
+                            : l10n.searchingFor(query)),
                 filled: true,
                 fillColor: Colors.white,
                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -92,12 +93,11 @@ class SearchPage extends ConsumerWidget {
 
           // --- Offline banner (inline) ---
           if (isOffline)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: _InlineInfo(
                 icon: Icons.wifi_off,
-                text:
-                    'You are offline. Try again when you have internet connection.',
+                text: l10n.offlineMessage,
               ),
             ),
 
@@ -115,13 +115,12 @@ class SearchPage extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: _InlineInfo(
                           icon: Icons.error_outline,
-                          text: 'Failed to search. $e',
+                          text: l10n.searchFailed(e.toString()),
                         ),
                       ),
                     ],
                   ),
               data: (r) {
-                // ✅ Step 3: Properly consume the search results
                 final items = r.items;
                 final page = r.page;
                 final totalPages = r.totalPages;
@@ -131,13 +130,13 @@ class SearchPage extends ConsumerWidget {
                 }
                 if (query.trim().isNotEmpty && items.isEmpty) {
                   return ListView(
-                    children: const [
-                      SizedBox(height: 40),
+                    children: [
+                      const SizedBox(height: 40),
                       Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: _InlineInfo(
                           icon: Icons.search_off,
-                          text: 'No results. Try another keyword.',
+                          text: l10n.noResultsTryAnotherKeyword,
                         ),
                       ),
                     ],
@@ -166,7 +165,7 @@ class SearchPage extends ConsumerWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Page ${page + 1} of $totalPages',
+                              l10n.paginationStatus(page + 1, totalPages),
                               style: const TextStyle(color: Colors.black54),
                             ),
                             Row(
@@ -176,7 +175,7 @@ class SearchPage extends ConsumerWidget {
                                     Icons.arrow_back_ios,
                                     size: 16,
                                   ),
-                                  label: const Text('Prev'),
+                                  label: Text(l10n.previous),
                                   onPressed:
                                       page > 0
                                           ? () => updateParams(
@@ -190,7 +189,7 @@ class SearchPage extends ConsumerWidget {
                                     Icons.arrow_forward_ios,
                                     size: 16,
                                   ),
-                                  label: const Text('Next'),
+                                  label: Text(l10n.next),
                                   onPressed:
                                       (page + 1) < totalPages
                                           ? () => updateParams(
@@ -223,7 +222,6 @@ class _BookTile extends ConsumerWidget {
     final isSaved = ref.watch(isBookSavedProvider(book.id));
     final isDownloadedAsync = ref.watch(isBookDownloadedProvider(book.id));
 
-    // pick best cover (coverUrl or first IMAGE resource)
     String _thumb() {
       if ((book.coverUrl ?? '').isNotEmpty) return book.coverUrl!;
       final img = book.resources.firstWhere(
@@ -349,17 +347,18 @@ class _EmptyHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return ListView(
-      children: const [
-        SizedBox(height: 48),
-        Icon(Icons.manage_search, size: 48, color: Colors.black38),
-        SizedBox(height: 12),
+      children: [
+        const SizedBox(height: 48),
+        const Icon(Icons.manage_search, size: 48, color: Colors.black38),
+        const SizedBox(height: 12),
         Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
-            'Search for books, authors, or categories',
+            l10n.searchEmptyHint,
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.black54),
+            style: const TextStyle(color: Colors.black54),
           ),
         ),
       ],

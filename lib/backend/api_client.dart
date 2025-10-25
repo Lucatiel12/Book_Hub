@@ -1,6 +1,11 @@
+// lib/backend/api_client.dart
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:book_hub/features/auth/auth_provider.dart';
 import 'models/dtos.dart';
 
+// -------------------- Tokens & callbacks --------------------
 typedef GetAccessToken = Future<String?> Function();
 typedef GetRefreshToken = Future<String?> Function();
 typedef SaveTokens = Future<void> Function(AuthTokens);
@@ -12,23 +17,7 @@ class AuthTokens {
   AuthTokens(this.accessToken, this.refreshToken);
 }
 
-/// A Dio-based API client that handles automatic token injection and refresh.
-///
-/// ## Example
-///
-/// If your backend paths are actually under `/api/v1`, instantiate ApiClient like so:
-///
-/// ```dart
-/// ApiClient(
-///   baseUrl: '[https://bookhub-86lf.onrender.com](https://bookhub-86lf.onrender.com)',
-///   getAccessToken: ..., // your function to get the stored access token
-///   getRefreshToken: ..., // your function to get the stored refresh token
-///   saveTokens: ..., // your function to save new tokens
-///   clearTokens: ..., // your function to clear tokens on failure/logout
-///   apiPrefix: '/api/v1',
-///   refreshPath: '/api/v1/auth/refresh',
-/// )
-/// ```
+// -------------------- ApiClient --------------------
 class ApiClient {
   final Dio _dio;
   final GetAccessToken getAccessToken;
@@ -36,12 +25,13 @@ class ApiClient {
   final SaveTokens saveTokens;
   final ClearTokens clearTokens;
 
-  /// If your backend uses a prefix like `/api/v1`, set this accordingly.
+  /// e.g. '/api/v1'
   final String apiPrefix;
 
-  /// The full path where the backend exposes the token refresh endpoint.
-  /// Example: `/auth/refresh` or `/api/v1/auth/refresh`
+  /// e.g. '/api/v1/auth/refresh'
   final String refreshPath;
+
+  Dio get dio => _dio;
 
   ApiClient({
     required String baseUrl,
@@ -55,16 +45,17 @@ class ApiClient {
          BaseOptions(
            baseUrl: baseUrl,
            headers: {'Accept': 'application/json'},
-           connectTimeout: const Duration(seconds: 10),
-           receiveTimeout: const Duration(seconds: 10),
+           // ⬇️ Give cold/slow servers more room
+           connectTimeout: const Duration(seconds: 20),
+           receiveTimeout: const Duration(seconds: 45),
+           sendTimeout: const Duration(seconds: 45),
          ),
        ) {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (o, h) async {
-          // Attach access token to non-auth calls
-          final path = o.uri.path; // absolute path
-          final isAuthCall = path.contains('/auth/');
+          // attach bearer except for auth endpoints
+          final isAuthCall = o.uri.path.contains('/auth/');
           if (!isAuthCall) {
             final tok = await getAccessToken();
             if (tok != null && tok.isNotEmpty) {
@@ -74,9 +65,8 @@ class ApiClient {
           h.next(o);
         },
         onError: (e, h) async {
-          // Try to refresh the token once on 401 Unauthorized error
           if (e.response?.statusCode == 401) {
-            // Prevent a refresh loop if the refresh endpoint itself fails
+            // avoid looping on refresh
             if (e.requestOptions.path == refreshPath) {
               await clearTokens();
               return h.next(e);
@@ -88,11 +78,10 @@ class ApiClient {
                 final res = await _dio.post(
                   refreshPath,
                   data: {'refreshToken': rt},
-                  // Ensure no stale auth header is sent with the refresh request
                   options: Options(headers: {'Authorization': null}),
                 );
 
-                // Flexible parsing to support responses like { "data": { ... } } or { ... }
+                // { status, message, data: { accessToken, refreshToken, user } } or { accessToken, ... }
                 String? newAccess;
                 String? newRefresh;
                 final body = res.data;
@@ -106,18 +95,16 @@ class ApiClient {
                 if (newAccess != null && newAccess.isNotEmpty) {
                   await saveTokens(AuthTokens(newAccess, newRefresh));
 
-                  // Retry the original request with the new token
+                  // retry original
                   final req = e.requestOptions;
                   req.headers['Authorization'] = 'Bearer $newAccess';
                   final response = await _dio.fetch(req);
                   return h.resolve(response);
                 }
               } catch (_) {
-                // If refresh fails, clear tokens and let the original error proceed
                 await clearTokens();
               }
             } else {
-              // No refresh token available, so clear any stale tokens
               await clearTokens();
             }
           }
@@ -125,11 +112,37 @@ class ApiClient {
         },
       ),
     );
+
+    // Add request/response logging
+    _dio.interceptors.add(
+      LogInterceptor(
+        request: true,
+        requestHeader: true,
+        requestBody: false,
+        responseHeader: true,
+        responseBody: false, // set true if you want full JSON dumps
+        error: true,
+      ),
+    );
   }
 
-  // ---------------------------
-  // HTTP verb helper methods
-  // ---------------------------
+  // -------------------- small retry helper --------------------
+  Future<R> _withRetry<R>(Future<R> Function() fn) async {
+    try {
+      return await fn();
+    } on DioException catch (e) {
+      final t = e.type;
+      if (t == DioExceptionType.connectionTimeout ||
+          t == DioExceptionType.receiveTimeout ||
+          t == DioExceptionType.sendTimeout) {
+        // one quick retry
+        return await fn();
+      }
+      rethrow;
+    }
+  }
+
+  // -------------------- HTTP helpers --------------------
   Future<Response<T>> get<T>(
     String path, {
     Map<String, dynamic>? queryParameters,
@@ -153,6 +166,26 @@ class ApiClient {
       data: data,
       queryParameters: queryParameters,
       options: options,
+    );
+  }
+
+  /// Multipart POST with long timeouts + progress callback.
+  Future<Response<T>> postMultipart<T>(
+    String path, {
+    required FormData data,
+    Duration sendTimeout = const Duration(minutes: 3),
+    Duration receiveTimeout = const Duration(minutes: 3),
+    ProgressCallback? onSendProgress,
+  }) {
+    return _dio.post<T>(
+      _full(path),
+      data: data,
+      options: Options(
+        contentType: 'multipart/form-data',
+        sendTimeout: sendTimeout,
+        receiveTimeout: receiveTimeout,
+      ),
+      onSendProgress: onSendProgress,
     );
   }
 
@@ -199,10 +232,8 @@ class ApiClient {
     );
   }
 
-  /// Prepends the `apiPrefix` to the path if it's not already there.
   String _full(String path) {
     if (apiPrefix.isEmpty) return path;
-    // Avoid double-prefixing if the caller already provided a full path
     return path.startsWith('$apiPrefix/')
         ? path
         : path.startsWith('/')
@@ -210,39 +241,191 @@ class ApiClient {
         : '$apiPrefix/$path';
   }
 
-  // ---------- Books ----------
+  // ---------- Domain helpers (exactly per your Swagger) ----------
+
+  /// GET /api/v1/books
+  /// Response: { status, message, data: PageBookResponseDTO }
   Future<PageBookResponseDto> getBooks({
-    String? query,
-    String? categoryId,
+    String? query, // optional/no-op if backend ignores
+    String? categoryId, // optional/no-op if backend ignores
     int page = 0,
     int size = 20,
   }) async {
-    final res = await get<Map<String, dynamic>>(
-      '/books',
-      queryParameters: {
-        if (query != null && query.isNotEmpty) 'q': query,
-        if (categoryId != null && categoryId.isNotEmpty)
-          'categoryId': categoryId,
-        'page': page,
-        'size': size,
-      },
-    );
-    final data = res.data?['data'] as Map<String, dynamic>;
-    return PageBookResponseDto.fromJson(data);
+    return _withRetry(() async {
+      final res = await get<Map<String, dynamic>>(
+        '/books',
+        queryParameters: {
+          'page': page,
+          'size': size,
+          if (query != null && query.isNotEmpty) 'q': query,
+          if (categoryId != null && categoryId.isNotEmpty)
+            'categoryId': categoryId,
+        },
+      );
+
+      // unwrap { data: { content, number, totalPages, ... } }
+      final map = res.data ?? const <String, dynamic>{};
+      final pageMap = (map['data'] ?? map) as Map<String, dynamic>;
+      return PageBookResponseDto.fromJson(pageMap);
+    });
   }
 
+  /// GET /api/v1/books/{id}
+  /// Response: { status, message, data: BookResponseDTO }
   Future<BookResponseDto> getBook(String id) async {
-    final res = await get<Map<String, dynamic>>('/books/$id');
-    final data = res.data?['data'] as Map<String, dynamic>;
-    return BookResponseDto.fromJson(data);
+    return _withRetry(() async {
+      final res = await get<Map<String, dynamic>>('/books/$id');
+      final map = res.data ?? const <String, dynamic>{};
+      final data = (map['data'] ?? map) as Map<String, dynamic>;
+      return BookResponseDto.fromJson(data);
+    });
   }
 
-  // ---------- Categories ----------
-  Future<List<CategoryDto>> getCategories() async {
-    final res = await get<Map<String, dynamic>>('/categories');
-    final list = (res.data?['data'] as List<dynamic>? ?? const []);
-    return list
-        .map((e) => CategoryDto.fromJson(e as Map<String, dynamic>))
-        .toList();
+  /// DELETE /api/v1/books/{bookId}
+  Future<void> deleteBook(String bookId) async {
+    await _withRetry(() async {
+      // server returns {status,message,data} (data is usually a string)
+      await delete<Map<String, dynamic>>('/books/$bookId');
+    });
+  }
+
+  // Quick one-off raw fetcher to debug the book payload shape
+  Future<Map<String, dynamic>> getBookRaw(String id) async {
+    final res = await get<Map<String, dynamic>>('/books/$id');
+    // unwrap common { data: {...} } envelopes
+    final root = res.data ?? const <String, dynamic>{};
+    final data =
+        (root['data'] is Map<String, dynamic>)
+            ? (root['data'] as Map<String, dynamic>)
+            : root;
+    return data.cast<String, dynamic>();
+  }
+
+  /// GET /api/v1/categories
+  /// Swagger: PageCategoryDTO (sometimes wrapped as {status,message,data} elsewhere).
+  /// We return just the list of categories.
+  Future<List<CategoryDto>> getCategories({
+    int page = 0,
+    int size = 100,
+  }) async {
+    return _withRetry(() async {
+      final res = await get<Map<String, dynamic>>(
+        '/categories',
+        queryParameters: {'page': page, 'size': size},
+      );
+
+      final root = res.data ?? const <String, dynamic>{};
+
+      // If wrapped, unwrap; otherwise treat as the page object itself.
+      final pageObj =
+          (root['data'] is Map<String, dynamic>) ? root['data'] : root;
+
+      final list = (pageObj['content'] as List<dynamic>? ?? const []);
+      return list
+          .map((e) => CategoryDto.fromJson(e as Map<String, dynamic>))
+          .toList();
+    });
+  }
+
+  /// POST /api/v1/categories
+  /// Body: { "name": "Fantasy" }
+  /// Response: either { status, message, data: CategoryDTO } or CategoryDTO
+  Future<CategoryDto> createCategory(String name) async {
+    return _withRetry(() async {
+      final res = await post<Map<String, dynamic>>(
+        '/categories',
+        data: {'name': name},
+      );
+
+      final root = res.data ?? const <String, dynamic>{};
+      final map = (root['data'] ?? root) as Map<String, dynamic>;
+      return CategoryDto.fromJson(map);
+    });
+  }
+
+  // 2) NEW METHODS ADDED
+  /// GET /api/v1/history
+  Future<PageReadingHistoryResponseDto> getReadingHistory({
+    int page = 0,
+    int size = 10,
+  }) async {
+    return _withRetry(() async {
+      final res = await get<Map<String, dynamic>>(
+        '/history',
+        queryParameters: {'page': page, 'size': size},
+      );
+      final root = res.data ?? const <String, dynamic>{};
+      final map = (root['data'] ?? root) as Map<String, dynamic>;
+      return PageReadingHistoryResponseDto.fromJson(map);
+    });
+  }
+
+  /// POST /api/v1/history  body: { "bookId": "..." }
+  Future<void> logHistory(String bookId) async {
+    await _withRetry(() async {
+      await post<Map<String, dynamic>>('/history', data: {'bookId': bookId});
+    });
+  }
+
+  /// GET /api/v1/progress/{bookId}
+  Future<ReadingProgressDto?> getProgress(String bookId) async {
+    return _withRetry(() async {
+      final res = await get<Map<String, dynamic>>('/progress/$bookId');
+      final root = res.data ?? const <String, dynamic>{};
+      final data = (root['data'] ?? root);
+      if (data is Map<String, dynamic>) {
+        return ReadingProgressDto.fromJson(data);
+      }
+      return null;
+    });
+  }
+
+  /// PUT /api/v1/progress/{bookId}
+  Future<ReadingProgressDto> updateProgress(
+    String bookId, {
+    required ReadingProgressDto progress,
+  }) async {
+    return _withRetry(() async {
+      final res = await put<Map<String, dynamic>>(
+        '/progress/$bookId',
+        data: progress.toJson(),
+      );
+      final root = res.data ?? const <String, dynamic>{};
+      final data = (root['data'] ?? root) as Map<String, dynamic>;
+      return ReadingProgressDto.fromJson(data);
+    });
   }
 }
+
+// -------------------- Providers --------------------
+
+final apiBaseUrlProvider = Provider<String>((ref) {
+  return const String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://bookhub-86lf.onrender.com',
+  );
+});
+
+final apiClientProvider = Provider<ApiClient>((ref) {
+  final baseUrl = ref.watch(apiBaseUrlProvider);
+
+  // NOTE: do not capture authState into a local variable.
+  final authNotifier = ref.read(authProvider.notifier);
+
+  return ApiClient(
+    baseUrl: baseUrl,
+    apiPrefix: '/api/v1',
+    refreshPath: '/api/v1/auth/refresh',
+
+    // ⬇️ Always read the *current* state when a request starts
+    getAccessToken: () async => ref.read(authProvider).token,
+    getRefreshToken: () async => ref.read(authProvider).refreshToken,
+
+    saveTokens:
+        (t) async => authNotifier.saveTokens(
+          access: t.accessToken,
+          refresh: t.refreshToken,
+        ),
+    clearTokens: () async => authNotifier.logout(),
+  );
+});

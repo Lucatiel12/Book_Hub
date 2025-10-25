@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:book_hub/features/auth/auth_provider.dart';
-import '../../pages/home_page.dart';
+import 'package:book_hub/pages/home_page.dart';
 
 class AuthPage extends ConsumerStatefulWidget {
   const AuthPage({super.key});
@@ -69,6 +69,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
 
     ref.listen<AuthState>(authProvider, (previous, next) {
       if (next.isAuthenticated && mounted) {
+        // ✅ After login succeeds
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => const HomePage()),
@@ -77,7 +78,6 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     });
 
     final error = authState.errorMessage?.trim();
-
     return Scaffold(
       body: Stack(
         children: [

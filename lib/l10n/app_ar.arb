@@ -1,0 +1,381 @@
+{
+  "@@locale": "ar",
+
+  "publishedDate": "تاريخ النشر",
+  "@publishedDate": { "description": "حقل/تسمية لاختيار تاريخ النشر." },
+
+  "choose": "اختيار",
+  "@choose": { "description": "زر لاختيار ملف او تاريخ." },
+
+  "coverImage": "صورة الغلاف",
+  "@coverImage": { "description": "تسمية لاختيار او عرض صورة الغلاف." },
+
+  "ebookFile": "ملف الكتاب (PDF/EPUB)",
+  "@ebookFile": { "description": "تسمية لاختيار ملف الكتاب الالكتروني (PDF/EPUB)." },
+
+  "requiredField": "مطلوب",
+  "@requiredField": { "description": "علامة التحقق عندما يكون الحقل مطلوبا." },
+
+  "pickDate": "اختر التاريخ",
+  "@pickDate": { "description": "زر/تسمية لفتح منتقي التاريخ." },
+
+  "submissionFailed": "فشل: {errorMessage}",
+  "@submissionFailed": {
+    "description": "يظهر عند فشل الارسال.",
+    "placeholders": { "errorMessage": { "type": "String" } }
+  },
+
+  "bookCreatedSuccessfully": "تم انشاء الكتاب بنجاح",
+  "@bookCreatedSuccessfully": { "description": "اشعار عند نجاح انشاء كتاب بواسطة المسؤول." },
+
+  "categoriesFailed": "فشل تحميل التصنيفات: {error}",
+  "@categoriesFailed": {
+    "description": "يظهر عند فشل تحميل التصنيفات.",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "submitABook": "ارسال كتاب",
+  "@submitABook": { "description": "عنوان صفحة ارسال كتاب من قبل المستخدم." },
+
+  "bookSubmittedSuccessfully": "تم ارسال الكتاب \"{bookTitle}\" بنجاح!",
+  "@bookSubmittedSuccessfully": {
+    "description": "اشعار عند نجاح ارسال كتاب.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "bookDetails": "تفاصيل الكتاب",
+  "@bookDetails": { "description": "عنوان القسم او الصفحة لعرض تفاصيل الكتاب." },
+
+  "enterBookTitleHint": "ادخل عنوان الكتاب",
+  "@enterBookTitleHint": { "description": "تلميح لحقل ادخال عنوان الكتاب." },
+
+  "pleaseEnterTitle": "الرجاء ادخال عنوان",
+  "@pleaseEnterTitle": { "description": "رسالة تحقق عند ترك العنوان فارغا." },
+
+  "author": "المؤلف",
+  "@author": { "description": "تسمية لحقل المؤلف." },
+
+  "enterAuthorNameHint": "ادخل اسم المؤلف",
+  "@enterAuthorNameHint": { "description": "تلميح لحقل ادخال اسم المؤلف." },
+
+  "pleaseEnterAuthor": "يرجى ادخال اسم المؤلف",
+  "@pleaseEnterAuthor": { "description": "رسالة تحقق عند ترك المؤلف فارغا." },
+
+  "description": "الوصف",
+  "@description": { "description": "تسمية لحقل الوصف." },
+
+  "briefDescriptionHint": "وصف موجز للكتاب...",
+  "@briefDescriptionHint": { "description": "تلميح لحقل ادخال الوصف المختصر." },
+
+  "pdfEpubLink": "رابط PDF/ePub",
+  "@pdfEpubLink": { "description": "تسمية لحقل ادخال رابط PDF/EPUB." },
+
+  "pleaseEnterLink": "الرجاء ادخال رابط",
+  "@pleaseEnterLink": { "description": "رسالة تحقق عند ترك الرابط فارغا." },
+
+  "isbn": "ردمك",
+  "@isbn": { "description": "تسمية لحقل رقم الكتاب المعياري الدولي." },
+
+  "category": "الفئة",
+  "@category": { "description": "تسمية لاختيار الفئة." },
+
+  "selectCategoryHint": "اختر فئة",
+  "@selectCategoryHint": { "description": "تلميح في قائمة اختيار الفئات." },
+
+  "pleaseSelectCategory": "الرجاء اختيار فئة",
+  "@pleaseSelectCategory": { "description": "رسالة تحقق عند عدم اختيار فئة." },
+
+  "submissionGuidelinesNote": "ملاحظة: يرجى التاكد من ان رابط الكتاب صحيح...",
+  "@submissionGuidelinesNote": { "description": "ملاحظة/ارشادات في صفحة ارسال الكتاب." },
+
+  "optionalLabel": "(اختياري)",
+  "@optionalLabel": { "description": "لاحقة توضع بجانب الحقول الاختيارية." },
+
+  "loading": "جاري التحميل...",
+  "@loading": { "description": "تسمية التحميل العامة." },
+
+  "book": "كتاب",
+  "@book": { "description": "الكلمة العامة 'كتاب'." },
+
+  "failedToLoadBook": "فشل تحميل الكتاب",
+  "@failedToLoadBook": { "description": "يظهر عند فشل جلب بيانات كتاب." },
+
+  "removeFromSavedTooltip": "ازالة من المحفوظات",
+  "@removeFromSavedTooltip": { "description": "تلميح زر لازالة كتاب من المحفوظات." },
+
+  "saveTooltip": "حفظ",
+  "@saveTooltip": { "description": "تلميح زر لحفظ كتاب." },
+
+  "byAuthor": "بقلم {authorName}",
+  "@byAuthor": {
+    "description": "يظهر بجانب اسم المؤلف.",
+    "placeholders": { "authorName": { "type": "String" } }
+  },
+
+  "categoryLabel": "الفئة: {categoryName}",
+  "@categoryLabel": {
+    "description": "يظهر بجانب اسم الفئة.",
+    "placeholders": { "categoryName": { "type": "String" } }
+  },
+
+  "readNow": "اقرا الان",
+  "@readNow": { "description": "الاجراء الرئيسي لفتح القارئ." },
+
+  "remove": "ازالة",
+  "@remove": { "description": "اجراء الازالة العام." },
+
+  "download": "تحميل",
+  "@download": { "description": "اجراء لتحميل الكتاب." },
+
+  "retry": "اعادة المحاولة",
+  "@retry": { "description": "زر لاعادة المحاولة بعد فشل." },
+
+  "chapters": "الفصول",
+  "@chapters": { "description": "عنوان قسم الفصول." },
+
+  "aboutThisBook": "حول هذا الكتاب",
+  "@aboutThisBook": { "description": "عنوان قسم وصف الكتاب." },
+
+  "noDescriptionAvailable": "لا يوجد وصف متاح",
+  "@noDescriptionAvailable": { "description": "يظهر عند غياب وصف الكتاب." },
+
+  "noDescription": "لا يوجد وصف",
+  "@noDescription": {
+    "description": "نص يظهر عندما لا يتوفر وصف للعنصر (يستخدم في عرض القوائم)."
+  },
+
+  "fullBook": "الكتاب الكامل",
+  "@fullBook": { "description": "تسمية للملف الكامل للكتاب." },
+
+  "downloadUrlNotAvailable": "رابط التنزيل غير متوفر",
+  "@downloadUrlNotAvailable": { "description": "يظهر عند غياب رابط التنزيل." },
+
+  "addedToDownloads": "تمت اضافته الى التنزيلات",
+  "@addedToDownloads": { "description": "اشعار عند اضافة كتاب الى التنزيلات." },
+
+  "bookRemovedFromDevice": "تمت ازالة {bookTitle} من الجهاز",
+  "@bookRemovedFromDevice": {
+    "description": "اشعار عند حذف كتاب محمل.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "bookSaved": "تم حفظ {bookTitle}!",
+  "@bookSaved": {
+    "description": "اشعار عند حفظ كتاب.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "bookRemovedFromSaved": "تمت ازالة {bookTitle} من المحفوظات",
+  "@bookRemovedFromSaved": {
+    "description": "اشعار عند ازالة كتاب من المحفوظات.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "browseCategories": "تصفح الفئات",
+  "@browseCategories": { "description": "عنوان صفحة تصفح الفئات." },
+
+  "bookCount": "{count, plural, =0 {لا كتب} one {كتاب واحد} two {كتابان} few {# كتب} many {# كتابا} other {# كتاب}}",
+  "@bookCount": {
+    "description": "تعبير متعدد لصياغة عدد الكتب.",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "errorGeneric": "خطا: {errorMessage}",
+  "@errorGeneric": {
+    "description": "خطا عام مع الرسالة.",
+    "placeholders": { "errorMessage": { "type": "String" } }
+  },
+
+  "noDownloadsYet": "لا توجد تنزيلات بعد",
+  "@noDownloadsYet": { "description": "الحالة الفارغة لصفحة المكتبة." },
+
+  "untitled": "بدون عنوان",
+  "@untitled": { "description": "عنوان بديل عند غياب العنوان." },
+
+  "unknownAuthor": "مؤلف غير معروف",
+  "@unknownAuthor": { "description": "مؤلف بديل عند غياب الاسم." },
+
+  "requestABook": "اطلب كتابا",
+  "@requestABook": { "description": "عنوان صفحة طلب كتاب." },
+
+  "requestBookDescription": "لا يمكنك العثور على الكتاب الذي تبحث عنه...",
+  "@requestBookDescription": { "description": "شرح قصير في صفحة الطلب." },
+
+  "bookTitle": "عنوان الكتاب",
+  "@bookTitle": { "description": "تسمية لحقل عنوان الكتاب." },
+
+  "enterTitleValidation": "ادخل عنوانا",
+  "@enterTitleValidation": { "description": "رسالة تحقق عند ترك العنوان فارغا." },
+
+  "descriptionOptional": "الوصف (اختياري)",
+  "@descriptionOptional": { "description": "تسمية لحقل الوصف الاختياري." },
+
+  "additionalDetailsHint": "اي تفاصيل اضافية عن الكتاب...",
+  "@additionalDetailsHint": { "description": "تلميح لحقل التفاصيل الاضافية." },
+
+  "helpUsFindBook": "ساعدنا في العثور على الكتاب بالضبط...",
+  "@helpUsFindBook": { "description": "نص ارشادي للمستخدم لكتابة تفاصيل اضافية." },
+
+  "submitRequest": "ارسال الطلب",
+  "@submitRequest": { "description": "الاجراء الرئيسي لارسال الطلب." },
+
+  "requestSubmitted": "تم ارسال طلب \"{bookTitle}\"!",
+  "@requestSubmitted": {
+    "description": "اشعار عند ارسال الطلب.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "requestResponseTime": "نرد عادة على طلبات الكتب خلال فترة قصيرة...",
+  "@requestResponseTime": { "description": "ملاحظة عن وقت الاستجابة." },
+
+  "noSavedBooksYet": "لا توجد كتب محفوظة بعد",
+  "@noSavedBooksYet": { "description": "الحالة الفارغة لصفحة الكتب المحفوظة." },
+
+  "removedFromSaved": "تمت الازالة من المحفوظات",
+  "@removedFromSaved": { "description": "اشعار عند ازالة كتاب من المحفوظات." },
+
+  "failedToLoadDetails": "فشل تحميل التفاصيل",
+  "@failedToLoadDetails": { "description": "يظهر عند فشل جلب تفاصيل الكتاب." },
+
+  "search": "بحث",
+  "@search": { "description": "تسمية حقل/صفحة البحث." },
+
+  "searchOfflineUnavailable": "غير متصل — البحث غير متاح",
+  "@searchOfflineUnavailable": { "description": "رسالة عند تعطيل البحث بسبب انقطاع الاتصال." },
+
+  "searchHint": "ابحث عن الكتب او المؤلفين او الفئات...",
+  "@searchHint": { "description": "تلميح في حقل البحث." },
+
+  "searchingFor": "جاري البحث: \"{query}\"",
+  "@searchingFor": {
+    "description": "حالة البحث الجارية.",
+    "placeholders": { "query": { "type": "String" } }
+  },
+
+  "offlineMessage": "انت غير متصل. حاول مرة اخرى...",
+  "@offlineMessage": { "description": "رسالة تظهر عند عدم الاتصال." },
+
+  "searchFailed": "فشل البحث. {error}",
+  "@searchFailed": {
+    "description": "رسالة عند فشل البحث.",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "noResultsTryAnotherKeyword": "لا توجد نتائج. حاول كلمة اخرى.",
+  "@noResultsTryAnotherKeyword": { "description": "الحالة الفارغة عند غياب النتائج." },
+
+  "paginationStatus": "صفحة {currentPage} من {totalPages}",
+  "@paginationStatus": {
+    "description": "مؤشر الصفحات الحالي والاجمالي.",
+    "placeholders": {
+      "currentPage": { "type": "int" },
+      "totalPages": { "type": "int" }
+    }
+  },
+
+  "previous": "السابق",
+  "@previous": { "description": "زر الصفحة السابقة." },
+
+  "next": "التالي",
+  "@next": { "description": "زر الصفحة التالية." },
+
+  "searchEmptyHint": "ابحث عن كتب او مؤلفين او فئات",
+  "@searchEmptyHint": { "description": "تلميح حالة فارغة في صفحة البحث." },
+
+  "anonymousUser": "مستخدم مجهول",
+  "@anonymousUser": { "description": "اسم بديل عند عدم تسجيل الدخول." },
+
+  "noEmail": "لا يوجد بريد الكتروني",
+  "@noEmail": { "description": "نص بديل عند عدم توفر بريد المستخدم." },
+
+  "saved": "المحفوظة",
+  "@saved": { "description": "علامة تبويب لعرض الكتب المحفوظة." },
+
+  "library": "المكتبة",
+  "@library": { "description": "علامة تبويب لعرض المكتبة المحمّلة." },
+
+  "history": "السجل",
+  "@history": { "description": "علامة تبويب لعرض سجل القراءة." },
+
+  "settings": "الاعدادات",
+  "@settings": { "description": "عنصر قائمة/عنوان صفحة الاعدادات." },
+
+  "readingHistory": "سجل القراءة",
+  "@readingHistory": { "description": "عنصر لفتح صفحة سجل القراءة." },
+
+  "adminCreateBook": "انشاء / رفع كتاب",
+  "@adminCreateBook": { "description": "عنصر للمشرف لفتح صفحة انشاء/رفع كتاب." },
+
+  "manageRequests": "ادارة الطلبات",
+  "@manageRequests": { "description": "عنصر للمشرف لقائمة طلبات المستخدمين." },
+
+  "reviewSubmissions": "مراجعة المساهمات",
+  "@reviewSubmissions": { "description": "عنصر للمشرف لمراجعة الكتب المرفوعة." },
+
+  "createBook": "انشاء كتاب",
+  "@createBook": { "description": "نص زر الاجراء الرئيسي لانشاء كتاب." },
+
+  "importFromDevice": "Import from device",
+  "@importFromDevice": { "description": "Tooltip/title for the FAB to import local files." },
+
+  "unsupportedFileType": "Unsupported file type",
+  "@unsupportedFileType": { "description": "Shown when the selected file isn't a supported reader type." },
+
+  "couldNotOpenFile": "Could not open file",
+  "@couldNotOpenFile": { "description": "Generic error when opening a local file fails." },
+
+  "openingFile": "Opening file...",
+  "@openingFile": { "description": "Feedback when starting to open a picked file." },
+  
+  "addCategory": "اضافة فئة",
+  "@addCategory": {
+    "description": "زر لاضافة فئة جديدة."
+  },
+  
+  "categoryName": "اسم الفئة",
+  "@categoryName": {
+    "description": "تسمية لحقل ادخال اسم الفئة."
+  },
+
+  "categoryNameHint": "مثال: فانتازيا",
+  "@categoryNameHint": {
+    "description": "نص ارشادي يظهر داخل حقل ادخال اسم الفئة."
+  },
+
+  "create": "انشاء",
+  "@create": {
+    "description": "زر لتاكيد انشاء عنصر جديد."
+  },
+
+  "cancel": "الغاء",
+  "@cancel": {
+    "description": "زر لاغلاق الحوار بدون حفظ التغييرات."
+  },
+
+  "categoryCreated": "تم انشاء الفئة \"{name}\"",
+  "@categoryCreated": {
+    "description": "رسالة بعد انشاء فئة جديدة بنجاح.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "فانتازيا"
+      }
+    }
+  },
+
+  "categoryCreateFailed": "فشل انشاء الفئة: {error}",
+  "@categoryCreateFailed": {
+    "description": "رسالة خطا عند فشل انشاء الفئة.",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "خطا في الشبكة"
+      }
+    }
+  },
+
+  "noCategoriesYet": "لا توجد فئات بعد",
+  "@noCategoriesYet": {
+    "description": "رسالة تظهر عندما لا تكون هناك اي فئات متاحة."
+  }
+}

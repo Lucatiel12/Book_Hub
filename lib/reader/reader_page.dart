@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:book_hub/services/reader_prefs.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 
 // Persisted theme options
 

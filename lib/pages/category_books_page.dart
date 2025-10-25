@@ -1,272 +1,215 @@
-// lib/pages/category_books_page.dart
-import 'dart:async';
 import 'package:flutter/material.dart';
-
-import 'book_details_page.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:book_hub/backend/api_client.dart';
+import 'package:book_hub/backend/models/dtos.dart' show ResourceType;
 import 'package:book_hub/backend/book_repository.dart' show UiBook;
-import 'package:book_hub/backend/models/dtos.dart' show ResourceDto;
+import 'book_details_page.dart';
 
-class CategoryBooksPage extends StatefulWidget {
+const Color _lightGreenBackground = Color(0xFFF0FDF0);
+
+/// Provider to fetch books by categoryId
+final categoryBooksProvider = FutureProvider.family<List<UiBook>, String>((
+  ref,
+  categoryId,
+) async {
+  ref.keepAlive();
+
+  final api = ref.read(apiClientProvider);
+  final page = await api.getBooks(page: 0, size: 20, categoryId: categoryId);
+
+  // Map DTOs to UiBook
+  return page.content
+      .map((b) {
+        String? ebookUrl;
+        // Assuming b.bookFiles is non-nullable list based on DTO definition.
+        // If it can be null, use: final files = b.bookFiles ?? const [];
+        final files = b.bookFiles;
+        for (final r in files) {
+          if (r.type == ResourceType.EBOOK) {
+            ebookUrl = r.contentUrl;
+            break;
+          }
+        }
+
+        return UiBook(
+          id: b.id,
+          title: b.title,
+          author: b.author,
+          description: b.description ?? '',
+          coverUrl: b.coverImage,
+          ebookUrl: ebookUrl,
+          categoryIds: b.categoryIds,
+          resources: files,
+        );
+      })
+      .toList(growable: false);
+});
+
+class CategoryBooksPage extends ConsumerWidget {
+  final String categoryId;
   final String categoryName;
-  const CategoryBooksPage({super.key, required this.categoryName});
+
+  const CategoryBooksPage({
+    super.key,
+    required this.categoryId,
+    required this.categoryName,
+  });
 
   @override
-  State<CategoryBooksPage> createState() => _CategoryBooksPageState();
-}
-
-class _CategoryBooksPageState extends State<CategoryBooksPage> {
-  final _scrollController = ScrollController();
-
-  // Paging state
-  final List<UiBook> _books = [];
-  bool _isRefreshing = false;
-  bool _isLoadingMore = false;
-  bool _hasMore = true;
-  int _page = 1;
-  static const int _pageSize = 18;
-
-  // simple throttle for scroll events
-  bool _loadQueued = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchPage(reset: true);
-
-    _scrollController.addListener(() {
-      if (_isLoadingMore || !_hasMore) return;
-
-      // When within ~2 screens from bottom, start loading next page
-      final threshold = 2 * 600; // rough heuristic
-      final position = _scrollController.position;
-      if (position.pixels + threshold >= position.maxScrollExtent) {
-        if (_loadQueued) return;
-        _loadQueued = true;
-        _fetchPage().whenComplete(() => _loadQueued = false);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _onRefresh() async {
-    setState(() => _isRefreshing = true);
-    await _fetchPage(reset: true);
-    setState(() => _isRefreshing = false);
-  }
-
-  Future<void> _fetchPage({bool reset = false}) async {
-    if (reset) {
-      _page = 1;
-      _hasMore = true;
-      _books.clear();
-      setState(() {}); // reflect cleared UI quickly
-    }
-    if (!_hasMore) return;
-
-    setState(() => _isLoadingMore = true);
-
-    // ⏳ Simulate network latency
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    // 🧪 Simulate backend responding with a page of results
-    final newItems = _mockBooksFor(
-      widget.categoryName,
-      page: _page,
-      pageSize: _pageSize,
-    );
-
-    if (newItems.length < _pageSize) {
-      _hasMore = false;
-    }
-
-    _books.addAll(newItems);
-    _page += 1;
-
-    if (mounted) {
-      setState(() => _isLoadingMore = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final title = widget.categoryName;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final booksAsync = ref.watch(categoryBooksProvider(categoryId));
 
     return Scaffold(
+      backgroundColor: _lightGreenBackground,
       appBar: AppBar(
-        title: Text(title),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
         elevation: 1,
+        title: Text(
+          categoryName,
+          style: const TextStyle(color: Colors.black87),
+        ),
+        iconTheme: const IconThemeData(color: Colors.black87),
       ),
       body: RefreshIndicator(
-        onRefresh: _onRefresh,
-        child:
-            _books.isEmpty && !_isLoadingMore
-                ? ListView(
-                  // RefreshIndicator needs a scrollable even when empty
-                  children: const [
-                    SizedBox(height: 80),
-                    Center(
-                      child: Text(
-                        "No books in this category yet.",
-                        style: TextStyle(color: Colors.black54),
-                      ),
-                    ),
-                  ],
-                )
-                : CustomScrollView(
-                  controller: _scrollController,
-                  slivers: [
-                    SliverPadding(
-                      padding: const EdgeInsets.all(12),
-                      sliver: SliverGrid(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 3, // compact
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                              childAspectRatio: 0.58, // cover-focused layout
-                            ),
-                        delegate: SliverChildBuilderDelegate((context, i) {
-                          final book = _books[i];
-                          return _BookTile(book: book);
-                        }, childCount: _books.length),
-                      ),
-                    ),
-
-                    // Bottom loader / "no more" message
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Center(
-                          child:
-                              _isLoadingMore
-                                  ? const SizedBox(
-                                    height: 28,
-                                    width: 28,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                  : (!_hasMore
-                                      ? const Text(
-                                        "That's all for now",
-                                        style: TextStyle(color: Colors.black54),
-                                      )
-                                      : const SizedBox.shrink()),
+        onRefresh:
+            () async => ref.invalidate(categoryBooksProvider(categoryId)),
+        child: booksAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error:
+              (err, _) => ListView(
+                children: [
+                  const SizedBox(height: 120),
+                  Center(
+                    child: Column(
+                      children: [
+                        Text('Failed to load books: $err'),
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                          onPressed:
+                              () => ref.invalidate(
+                                categoryBooksProvider(categoryId),
+                              ),
+                          child: const Text('Retry'),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-      ),
-    );
-  }
+                  ),
+                ],
+              ),
+          data: (books) {
+            if (books.isEmpty) {
+              return ListView(
+                children: const [
+                  SizedBox(height: 120),
+                  Center(
+                    child: Text(
+                      'No books found in this category.',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                  ),
+                ],
+              );
+            }
 
-  // ---- Mock paginated data generator (replace with API later) ----
-  List<UiBook> _mockBooksFor(
-    String category, {
-    required int page,
-    required int pageSize,
-  }) {
-    const covers = [
-      'https://picsum.photos/200/300?1',
-      'https://picsum.photos/200/300?2',
-      'https://picsum.photos/200/300?3',
-      'https://picsum.photos/200/300?4',
-      'https://picsum.photos/200/300?5',
-      'https://picsum.photos/200/300?6',
-    ];
-
-    // Pretend there are ~60 books max per category
-    final total = 60;
-    final start = (page - 1) * pageSize;
-    final end = (start + pageSize).clamp(0, total);
-
-    if (start >= total) return const [];
-
-    return List.generate(end - start, (offset) {
-      final i = start + offset;
-      return UiBook(
-        id: '${category}_$i',
-        title: '$category Book ${i + 1}',
-        author: 'Author $i',
-        description: 'Description for $category Book ${i + 1}',
-        coverUrl: covers[i % covers.length],
-        ebookUrl: null,
-        categoryIds: const [], // mock: no real IDs
-        resources: const <ResourceDto>[], // mock: no resources
-      );
-    });
-  }
-}
-
-// ---- Compact book card ----
-class _BookTile extends StatelessWidget {
-  final UiBook book;
-
-  const _BookTile({required this.book});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => BookDetailsPage(bookId: book.id)),
-        );
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Cover
-          AspectRatio(
-            aspectRatio: 0.68, // book cover ratio
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child:
-                  (book.coverUrl?.isNotEmpty ?? false)
-                      ? Image.network(
-                        book.coverUrl!,
-                        fit: BoxFit.cover,
-                        filterQuality: FilterQuality.low,
-                        errorBuilder: (_, __, ___) => _buildPlaceholder(),
-                      )
-                      : _buildPlaceholder(),
-            ),
-          ),
-          const SizedBox(height: 6),
-          // Title
-          Text(
-            book.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
-          ),
-          const SizedBox(height: 2),
-          // Author
-          Text(
-            book.author,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.black54, fontSize: 11),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlaceholder() {
-    return Container(
-      color: Colors.grey[300],
-      child: const Center(
-        child: Icon(Icons.book, size: 40, color: Colors.grey),
+            return GridView.builder(
+              padding: const EdgeInsets.all(16),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+                childAspectRatio: 0.65,
+              ),
+              itemCount: books.length,
+              itemBuilder: (_, i) {
+                final b = books[i];
+                return InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => BookDetailsPage(bookId: b.id),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(12),
+                            ),
+                            child: Container(
+                              color: Colors.grey.shade200,
+                              child:
+                                  (b.coverUrl == null || b.coverUrl!.isEmpty)
+                                      ? const Center(child: Icon(Icons.book))
+                                      : Image.network(
+                                        b.coverUrl!,
+                                        fit: BoxFit.cover,
+                                        width: double.infinity,
+                                        loadingBuilder:
+                                            (c, child, loading) =>
+                                                loading == null
+                                                    ? child
+                                                    : const Center(
+                                                      child:
+                                                          CircularProgressIndicator(),
+                                                    ),
+                                        errorBuilder:
+                                            (c, _, __) => const Center(
+                                              child: Icon(Icons.error),
+                                            ),
+                                      ),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                b.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                b.author,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

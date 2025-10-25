@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:book_hub/backend/book_repository.dart';
 import 'package:book_hub/backend/backend_providers.dart';
-import 'package:book_hub/backend/models/search_result.dart'; // 👈 import this
+import 'package:book_hub/backend/models/search_result.dart';
 
 class SearchParams {
   final String query;
@@ -32,11 +31,11 @@ class SearchParams {
 final searchParamsProvider = StateProvider<SearchParams>(
   (_) => const SearchParams(),
 );
+
 // Handy selectors
 final searchQueryProvider = Provider<String>(
   (ref) => ref.watch(searchParamsProvider).query,
 );
-
 final selectedCategoryIdProvider = Provider<String?>(
   (ref) => ref.watch(searchParamsProvider).categoryId,
 );
@@ -47,15 +46,20 @@ final searchResultsProvider = FutureProvider.autoDispose<SearchResult>((
   final repo = ref.watch(bookRepositoryProvider);
   final p = ref.watch(searchParamsProvider);
 
-  // debounce a bit
+  // tiny debounce
   await Future<void>.delayed(const Duration(milliseconds: 200));
 
-  final (items, page, totalPages) = await repo.search(
+  // PageResult<UiBook>
+  final pageResult = await repo.search(
     query: p.query,
     categoryId: p.categoryId,
     page: p.page,
     size: p.size,
   );
 
-  return SearchResult(items: items, page: page, totalPages: totalPages);
+  return SearchResult(
+    items: pageResult.items,
+    page: pageResult.pageNumber,
+    totalPages: pageResult.totalPages,
+  );
 });

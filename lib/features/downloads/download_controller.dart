@@ -1,4 +1,3 @@
-// lib/features/downloads/download_controller.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -330,6 +329,9 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
     String? url,
     String ext = 'epub',
   }) async {
+    // Safeguard: Ensure store is ready even if app forgot to call downloadedInitProvider.
+    await ref.read(downloadedBooksStoreProvider).init();
+
     final exists = state.any(
       (d) =>
           d.bookId == bookId &&
@@ -494,8 +496,13 @@ class DownloadController extends StateNotifier<List<ActiveDownload>> {
       _upsert(
         task = task.copyWith(progress: 1.0, status: DownloadStatus.completed),
       );
-      ref.invalidate(isBookDownloadedProvider(task.bookId));
-      ref.invalidate(profileStatsProvider);
+
+      // Defer cross-invalidations to a microtask (breaks the cycle boundary)
+      Future.microtask(() {
+        ref.invalidate(isBookDownloadedProvider(task.bookId));
+        ref.invalidate(profileStatsProvider);
+      });
+
       await _removeSidecarAndPart(task.bookId, task.ext);
 
       await NotificationService.instance.showCompleted(task.bookId, task.title);

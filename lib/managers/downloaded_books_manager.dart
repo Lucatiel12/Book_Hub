@@ -1,10 +1,12 @@
 // lib/managers/downloaded_books_manager.dart
 import 'dart:io';
+import 'dart:convert'; // for base64Url - NEW
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:book_hub/backend/api_client.dart'; // Added per patch
 import 'package:book_hub/services/storage/downloaded_books_store.dart';
 // Invalidate these when downloads change
 import 'package:book_hub/features/books/providers/saved_downloaded_providers.dart';
@@ -112,7 +114,7 @@ class DownloadedBooksManager {
         cancelToken: cancelToken,
       );
     } on DioException {
-      // handshake failed – keep .part for later resume
+      // handshake failed - keep .part for later resume
       rethrow;
     }
 
@@ -136,7 +138,7 @@ class DownloadedBooksManager {
     try {
       await for (final chunk in resp.data!.stream) {
         if (cancelToken?.isCancelled == true) {
-          // leave .part in place – treated as paused/canceled by caller
+          // leave .part in place - treated as paused/canceled by caller
           return;
         }
         await raf.writeFrom(chunk);
@@ -149,7 +151,7 @@ class DownloadedBooksManager {
       await raf.close();
     }
 
-    // success: rename .part → final
+    // success: rename .part -> final
     final finalFile = File(finalPath);
     if (await finalFile.exists()) await finalFile.delete();
     await partFile.rename(finalPath);
@@ -168,13 +170,69 @@ class DownloadedBooksManager {
     ref.invalidate(downloadedListProvider);
     ref.invalidate(profileStatsProvider);
   }
+
+  // + NEW: Import an existing local file into the Library (copies + indexes).
+  Future<DownloadEntry> importLocalFile({
+    required String sourcePath,
+    String? title,
+    String? author,
+    String? coverUrl,
+  }) async {
+    final f = File(sourcePath);
+    if (!await f.exists()) {
+      throw Exception('File does not exist');
+    }
+
+    // Only allow .pdf / .epub
+    final lower = sourcePath.toLowerCase();
+    late final String ext;
+    if (lower.endsWith('.pdf')) {
+      ext = 'pdf';
+    } else if (lower.endsWith('.epub')) {
+      ext = 'epub';
+    } else {
+      throw Exception('Unsupported file type');
+    }
+
+    // Stable local ID so progress/history can be added later.
+    String _localIdFor(String path) =>
+        'local:${base64Url.encode(utf8.encode(path))}';
+
+    final bookId = _localIdFor(sourcePath);
+
+    // Decide title fallback from filename if not provided.
+    title ??= p.basenameWithoutExtension(sourcePath);
+    author ??= '-';
+
+    // Copy to our managed folder so the app owns the file lifetime.
+    final destPath = await _store.targetPath(bookId, ext: ext);
+    await f.copy(destPath);
+
+    // Index without re-reading bytes.
+    final entry = await _store.saveFromExistingFile(
+      bookId: bookId,
+      absolutePath: destPath,
+      title: title,
+      author: author,
+      coverUrl: coverUrl,
+    );
+
+    // Keep UI in sync.
+    ref.invalidate(isBookDownloadedProvider(bookId));
+    ref.invalidate(downloadedListProvider);
+    ref.invalidate(profileStatsProvider);
+
+    return entry;
+  }
 }
 
 /// Riverpod providers
-final dioProvider = Provider<Dio>((ref) => Dio());
+// final dioProvider = Provider<Dio>((ref) => Dio()); // Removed per patch
 
 final downloadedBooksManagerProvider = Provider<DownloadedBooksManager>((ref) {
   final store = ref.watch(downloadedBooksStoreProvider);
-  final dio = ref.watch(dioProvider);
-  return DownloadedBooksManager(ref, store, dio);
+  // final dio = ref.watch(dioProvider); // Removed per patch
+  // return DownloadedBooksManager(ref, store, dio); // Removed per patch
+  final api = ref.watch(apiClientProvider); // Added per patch
+  return DownloadedBooksManager(ref, store, api.dio); // Added per patch
 });

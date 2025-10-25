@@ -1,4 +1,6 @@
+// lib/pages/saved_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'book_details_page.dart';
@@ -9,7 +11,6 @@ import 'package:book_hub/managers/saved_books_manager.dart';
 // backend
 import 'package:book_hub/backend/backend_providers.dart';
 import 'package:book_hub/backend/book_repository.dart' show UiBook;
-import 'package:book_hub/backend/models/dtos.dart' show ResourceDto;
 
 /// Fetch a single book by id (scoped to this file for convenience)
 final savedBookByIdProvider = FutureProvider.family<UiBook, String>((
@@ -35,26 +36,24 @@ class _SavedPageState extends ConsumerState<SavedPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final savedMgr = ref.watch(savedBooksManagerProvider);
     // Treat saved entries as real backend IDs
     final ids = savedMgr.current().toList()..sort();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Saved Books"),
-        backgroundColor: Colors.green,
-      ),
+      appBar: AppBar(title: Text(l10n.saved), backgroundColor: Colors.green),
       body: RefreshIndicator(
         onRefresh: _refresh,
         child:
             ids.isEmpty
                 ? ListView(
-                  children: const [
-                    SizedBox(height: 120),
+                  children: [
+                    const SizedBox(height: 120),
                     Center(
                       child: Text(
-                        "No saved books yet",
-                        style: TextStyle(color: Colors.black54),
+                        l10n.noSavedBooksYet,
+                        style: const TextStyle(color: Colors.black54),
                       ),
                     ),
                   ],
@@ -69,10 +68,10 @@ class _SavedPageState extends ConsumerState<SavedPage> {
                       bookId: id,
                       onRemove: () async {
                         await savedMgr.unsave(id);
-                        if (!mounted) return;
+                        if (!context.mounted) return;
                         setState(() {});
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Removed from Saved")),
+                          SnackBar(content: Text(l10n.removedFromSaved)),
                         );
                       },
                     );
@@ -185,6 +184,7 @@ class _ErrorTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Card(
       child: ListTile(
         leading: const _CoverPlaceholder(),
@@ -194,7 +194,7 @@ class _ErrorTile extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
-        subtitle: const Text("Failed to load details"),
+        subtitle: Text(l10n.failedToLoadDetails),
         trailing: IconButton(
           icon: const Icon(Icons.delete_outline, color: Colors.red),
           onPressed: onRemove,

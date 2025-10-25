@@ -1,101 +1,96 @@
+// lib/pages/categories_page.dart
 import 'package:flutter/material.dart';
-import '../models/category.dart';
-import 'category_books_page.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:book_hub/features/books/providers/categories_provider.dart';
+import 'package:book_hub/backend/models/dtos.dart'; // CategoryDto
 
-class CategoriesPage extends StatelessWidget {
+class CategoriesPage extends ConsumerWidget {
   const CategoriesPage({super.key});
 
-  // ▼ Mock Data: Replace with backend data later
-  final List<Category> _allCategories = const [
-    Category(icon: Icons.book_outlined, name: 'Literature', bookCount: 2847),
-    Category(icon: Icons.science_outlined, name: 'Science', bookCount: 1293),
-    Category(icon: Icons.history_edu_outlined, name: 'History', bookCount: 956),
-    Category(
-      icon: Icons.auto_stories_outlined,
-      name: 'Fantasy',
-      bookCount: 2104,
-    ),
-    Category(icon: Icons.biotech_outlined, name: 'Technology', bookCount: 876),
-    Category(icon: Icons.person_outline, name: 'Biography', bookCount: 451),
-    Category(
-      icon: Icons.psychology_outlined,
-      name: 'Philosophy',
-      bookCount: 322,
-    ),
-    Category(icon: Icons.explore_outlined, name: 'Adventure', bookCount: 1589),
-    Category(icon: Icons.favorite_border, name: 'Romance', bookCount: 1845),
-    Category(icon: Icons.movie_filter_outlined, name: 'Drama', bookCount: 673),
-  ];
-
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
+    final catsAsync = ref.watch(categoriesProvider);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Browse Categories'),
+        title: Text(l10n.browseCategories),
         backgroundColor: Colors.white,
         elevation: 1,
         foregroundColor: Colors.black,
       ),
-      body: GridView.builder(
-        padding: const EdgeInsets.all(16.0),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 16.0,
-          mainAxisSpacing: 16.0,
-          childAspectRatio: 1.2,
-        ),
-        itemCount: _allCategories.length,
-        itemBuilder: (context, index) {
-          final category = _allCategories[index];
-          return _CategoryCard(category: category);
-        },
-      ),
-    );
-  }
-}
-
-class _CategoryCard extends StatelessWidget {
-  final Category category;
-  const _CategoryCard({required this.category});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: () {
-          // ✅ Navigate to CategoryBooksPage with the category name
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => CategoryBooksPage(categoryName: category.name),
-            ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(12.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(category.icon, size: 36, color: Colors.blueAccent),
-              const SizedBox(height: 12),
-              Text(
-                category.name,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+      body: RefreshIndicator(
+        onRefresh: () async => ref.invalidate(categoriesProvider),
+        child: catsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error:
+              (err, _) => ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  const SizedBox(height: 120),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      children: [
+                        Text(
+                          l10n.errorGeneric(err.toString()),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                          onPressed: () => ref.invalidate(categoriesProvider),
+                          child: Text(l10n.retry),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                '${category.bookCount} books',
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
-              ),
-            ],
-          ),
+          data: (List<CategoryDto> cats) {
+            if (cats.isEmpty) {
+              return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  const SizedBox(height: 120),
+                  Center(
+                    child: Text(
+                      l10n.noResultsTryAnotherKeyword,
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              itemCount: cats.length,
+              separatorBuilder:
+                  (_, __) =>
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+              itemBuilder: (_, i) {
+                final c = cats[i];
+                return ListTile(
+                  leading: const Icon(Icons.category_outlined),
+                  title: Text(c.name),
+                  subtitle:
+                      (c.bookCount != null)
+                          ? Text(l10n.bookCount(c.bookCount!))
+                          : null,
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    // Use named route; you already wired onGenerateRoute (Option A)
+                    Navigator.pushNamed(
+                      context,
+                      '/categoryBooks',
+                      arguments: c, // pass full CategoryDto
+                    );
+                  },
+                );
+              },
+            );
+          },
         ),
       ),
     );

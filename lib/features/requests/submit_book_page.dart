@@ -1,4 +1,6 @@
+// lib/pages/admin/submit_book_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 class SubmitBookPage extends StatefulWidget {
   const SubmitBookPage({super.key});
@@ -17,6 +19,8 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
   final _linkController = TextEditingController();
   String? _selectedCategory;
 
+  // Note: In a real app, these category names would be fetched
+  // from a backend and would have associated translation keys.
   final List<String> categories = [
     "Literature",
     "Science",
@@ -41,10 +45,11 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
   }
 
   void _submitForm() {
+    final l10n = AppLocalizations.of(context)!;
     if (_formKey.currentState!.validate()) {
       final title = _titleController.text;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Book "$title" submitted successfully!')),
+        SnackBar(content: Text(l10n.bookSubmittedSuccessfully(title))),
       );
       Navigator.pop(context);
     }
@@ -52,10 +57,11 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8FA),
       appBar: AppBar(
-        title: const Text("Submit a Book"),
+        title: Text(l10n.submitABook),
         backgroundColor: const Color(0xFF4CAF50),
         foregroundColor: Colors.white,
         elevation: 0,
@@ -64,16 +70,16 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            _buildFormCard(),
+            _buildFormCard(l10n),
             const SizedBox(height: 16),
-            _buildNoteBox(),
+            _buildNoteBox(l10n),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildFormCard() {
+  Widget _buildFormCard(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(20.0),
       decoration: BoxDecoration(
@@ -93,45 +99,44 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _FormHeader(
+            _FormHeader(
               icon: Icons.library_books_outlined,
-              title: "Book Details",
+              title: l10n.bookDetails,
             ),
             const SizedBox(height: 24),
-
             _buildTextField(
               controller: _titleController,
               icon: Icons.title,
-              label: "Book Title",
-              hint: "Enter the book title",
+              label: l10n.bookTitle,
+              hint: l10n.enterBookTitleHint,
               validator:
-                  (value) => value!.isEmpty ? "Please enter a title" : null,
+                  (value) => value!.isEmpty ? l10n.pleaseEnterTitle : null,
             ),
             const SizedBox(height: 16),
             _buildTextField(
               controller: _authorController,
               icon: Icons.person_outline,
-              label: "Author",
-              hint: "Enter the author's name",
+              label: l10n.author,
+              hint: l10n.enterAuthorNameHint,
               validator:
-                  (value) => value!.isEmpty ? "Please enter an author" : null,
+                  (value) => value!.isEmpty ? l10n.pleaseEnterAuthor : null,
             ),
             const SizedBox(height: 16),
             _buildTextField(
               controller: _isbnController,
               icon: Icons.qr_code,
-              label: "ISBN",
+              label: l10n.isbn,
               hint: "978-0-123456-78-9",
               isOptional: true,
             ),
             const SizedBox(height: 16),
-            _buildCategoryDropdown(),
+            _buildCategoryDropdown(l10n),
             const SizedBox(height: 16),
             _buildTextField(
               controller: _descriptionController,
               icon: Icons.description_outlined,
-              label: "Description",
-              hint: "Brief description of the book...",
+              label: l10n.description,
+              hint: l10n.briefDescriptionHint,
               isOptional: true,
               maxLines: 4,
             ),
@@ -139,17 +144,17 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
             _buildTextField(
               controller: _linkController,
               icon: Icons.link,
-              label: "PDF/ePub Link",
+              label: l10n.pdfEpubLink,
               hint: "https://example.com/book.pdf",
               validator:
-                  (value) => value!.isEmpty ? "Please enter a link" : null,
+                  (value) => value!.isEmpty ? l10n.pleaseEnterLink : null,
             ),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.upload_file_outlined),
-                label: const Text("Submit Book"),
+                label: Text(l10n.createBook),
                 onPressed: _submitForm,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4CAF50),
@@ -208,11 +213,11 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
     );
   }
 
-  Widget _buildCategoryDropdown() {
+  Widget _buildCategoryDropdown(AppLocalizations l10n) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _FormLabel(icon: Icons.category_outlined, label: "Category"),
+        _FormLabel(icon: Icons.category_outlined, label: l10n.category),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: _selectedCategory,
@@ -222,7 +227,7 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
                   .toList(),
           onChanged: (value) => setState(() => _selectedCategory = value),
           decoration: InputDecoration(
-            hintText: "Select a category",
+            hintText: l10n.selectCategoryHint,
             contentPadding: const EdgeInsets.symmetric(
               vertical: 14,
               horizontal: 12,
@@ -237,13 +242,13 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
             ),
           ),
           validator:
-              (value) => value == null ? "Please select a category" : null,
+              (value) => value == null ? l10n.pleaseSelectCategory : null,
         ),
       ],
     );
   }
 
-  Widget _buildNoteBox() {
+  Widget _buildNoteBox(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -258,7 +263,7 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              "Note: Please ensure your book link is publicly accessible and the content complies with our submission guidelines.",
+              l10n.submissionGuidelinesNote,
               style: TextStyle(color: Colors.grey.shade700, height: 1.4),
             ),
           ),
@@ -305,6 +310,7 @@ class _FormLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Row(
       children: [
         Icon(icon, size: 18, color: const Color(0xFF4CAF50)),
@@ -320,9 +326,9 @@ class _FormLabel extends StatelessWidget {
               if (!isOptional)
                 const TextSpan(text: " *", style: TextStyle(color: Colors.red)),
               if (isOptional)
-                const TextSpan(
-                  text: " (Optional)",
-                  style: TextStyle(
+                TextSpan(
+                  text: l10n.optionalLabel,
+                  style: const TextStyle(
                     fontWeight: FontWeight.normal,
                     color: Colors.black45,
                   ),

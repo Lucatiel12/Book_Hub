@@ -54,7 +54,7 @@ class DownloadBadge extends ConsumerWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.6)),
+        border: Border.all(color: color.withValues(alpha: 0.6)),
       ),
       child: Text(label, style: TextStyle(fontSize: 11, color: color)),
     );

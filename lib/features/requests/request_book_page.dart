@@ -1,17 +1,60 @@
+// lib/pages/request_book_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:book_hub/features/requests/user_requests_repository.dart';
+import 'package:book_hub/features/requests/user_requests_models.dart';
 
-class RequestBookPage extends StatefulWidget {
+class RequestBookPage extends ConsumerStatefulWidget {
   const RequestBookPage({super.key});
 
   @override
-  State<RequestBookPage> createState() => _RequestBookPageState();
+  ConsumerState<RequestBookPage> createState() => _RequestBookPageState();
 }
 
-class _RequestBookPageState extends State<RequestBookPage> {
+class _RequestBookPageState extends ConsumerState<RequestBookPage> {
   final _formKey = GlobalKey<FormState>();
+  final _titleController = TextEditingController();
+  final _descController = TextEditingController();
+  bool _submitting = false;
 
-  String title = "";
-  String description = "";
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _submitting = true);
+    final repo = ref.read(userRequestsRepositoryProvider);
+
+    try {
+      final dto = BookLookupRequestDto(
+        title: _titleController.text.trim(),
+        description:
+            _descController.text.trim().isEmpty
+                ? null
+                : _descController.text.trim(),
+      );
+
+      await repo.lookup(dto);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Request submitted: ${dto.title}')),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to submit request: $e')));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,12 +63,10 @@ class _RequestBookPageState extends State<RequestBookPage> {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
+          onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text(
-          "Request a Book",
+          'Request a book',
           style: TextStyle(color: Colors.white),
         ),
         backgroundColor: const Color(0xFF4CAF50),
@@ -40,6 +81,7 @@ class _RequestBookPageState extends State<RequestBookPage> {
               color: const Color(0xFF4CAF50),
               width: double.infinity,
               child: const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.menu_book, color: Colors.white, size: 60),
                 ],
@@ -56,7 +98,7 @@ class _RequestBookPageState extends State<RequestBookPage> {
                     borderRadius: BorderRadius.circular(15.0),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
+                        color: Colors.black.withOpacity(0.1),
                         blurRadius: 10,
                         offset: const Offset(0, 5),
                       ),
@@ -67,66 +109,49 @@ class _RequestBookPageState extends State<RequestBookPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
+                        const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(
-                              Icons.menu_book,
-                              color: const Color(0xFF4CAF50),
-                            ),
+                            Icon(Icons.menu_book, color: Color(0xFF4CAF50)),
                           ],
                         ),
                         const SizedBox(height: 10),
                         const Text(
-                          "Can't find the book you're looking for? Let us know and we'll try to get it for you.",
+                          'Can’t find a book? Tell us what you need.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Colors.black54, fontSize: 14),
                         ),
                         const SizedBox(height: 20),
-                        _buildTextFieldWithIcon(
+                        _field(
                           icon: Icons.menu_book,
-                          label: "Book Title",
-                          hintText: "Enter the book title",
+                          label: 'Book title',
+                          hintText: 'Enter the book title',
+                          controller: _titleController,
                           validator:
-                              (value) =>
-                                  value == null || value.isEmpty
-                                      ? "Enter a title"
+                              (v) =>
+                                  (v == null || v.trim().isEmpty)
+                                      ? 'Please enter a title'
                                       : null,
-                          onSaved: (value) => title = value ?? "",
                         ),
                         const SizedBox(height: 20),
-                        _buildTextFieldWithIcon(
+                        _field(
                           icon: Icons.description,
-                          label: "Description (optional)",
+                          label: 'Description (optional)',
                           hintText:
-                              "Any additional details about the book (author, genre, edition, etc.)",
+                              'Add author, edition, or a link that helps us find it',
+                          controller: _descController,
                           maxLines: 4,
-                          onSaved: (value) => description = value ?? "",
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          "Help us find the exact book by providing more details",
-                          style: TextStyle(fontSize: 12, color: Colors.black45),
                         ),
                         const SizedBox(height: 30),
                         ElevatedButton.icon(
-                          onPressed: () {
-                            if (_formKey.currentState!.validate()) {
-                              _formKey.currentState!.save();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    "Request for \"$title\" submitted!",
-                                  ),
-                                ),
-                              );
-                              Navigator.pop(context);
-                            }
-                          },
+                          onPressed: _submitting ? null : _submit,
                           icon: const Icon(Icons.send, color: Colors.white),
-                          label: const Text(
-                            "Submit Request",
-                            style: TextStyle(color: Colors.white, fontSize: 16),
+                          label: Text(
+                            _submitting ? 'Submitting…' : 'Submit request',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                            ),
                           ),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF4CAF50),
@@ -143,10 +168,13 @@ class _RequestBookPageState extends State<RequestBookPage> {
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
-              "We typically respond to book requests within 24-48 hours",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.black54, fontSize: 14),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'We’ll review your request as soon as possible.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.black54, fontSize: 14),
+              ),
             ),
           ],
         ),
@@ -154,13 +182,13 @@ class _RequestBookPageState extends State<RequestBookPage> {
     );
   }
 
-  Widget _buildTextFieldWithIcon({
+  Widget _field({
     required IconData icon,
     required String label,
     required String hintText,
-    String? Function(String?)? validator,
-    void Function(String?)? onSaved,
+    required TextEditingController controller,
     int? maxLines,
+    String? Function(String?)? validator,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -181,6 +209,7 @@ class _RequestBookPageState extends State<RequestBookPage> {
         ),
         const SizedBox(height: 8),
         TextFormField(
+          controller: controller,
           decoration: InputDecoration(
             hintText: hintText,
             filled: true,
@@ -195,7 +224,6 @@ class _RequestBookPageState extends State<RequestBookPage> {
             ),
           ),
           validator: validator,
-          onSaved: onSaved,
           maxLines: maxLines,
           style: const TextStyle(color: Colors.black87),
         ),

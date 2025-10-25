@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
 
 import 'book_details_page.dart';
 import 'package:book_hub/features/downloads/download_badge.dart';
@@ -9,10 +11,11 @@ import 'package:book_hub/features/books/providers/saved_downloaded_providers.dar
 import 'package:book_hub/managers/downloaded_books_manager.dart';
 import 'package:book_hub/services/storage/downloaded_books_store.dart';
 
-// reader router
-import 'package:book_hub/reader/reader_models.dart';
-import 'package:book_hub/features/profile/profile_stats_provider.dart';
+// Reader
 import 'package:book_hub/reader/open_reader.dart';
+import 'package:book_hub/reader/reader_models.dart';
+
+import 'package:book_hub/features/profile/profile_stats_provider.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
@@ -26,15 +29,75 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
     ref.invalidate(downloadedListProvider);
   }
 
+  Future<void> _importFromDevice() async {
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'epub'],
+        allowMultiple: false,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+
+      final path = result.files.single.path;
+      if (path == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.couldNotOpenFile)));
+        return;
+      }
+
+      // Import (copy + index) then open from our managed location.
+      final mgr = ref.read(downloadedBooksManagerProvider);
+      final entry = await mgr.importLocalFile(sourcePath: path);
+
+      // Refresh list (manager already invalidates, but this is harmless).
+      ref.invalidate(downloadedListProvider);
+      ref.invalidate(profileStatsProvider);
+
+      if (!mounted) return;
+      // Open immediately (fully offline).
+      final isEpub = entry.path.toLowerCase().endsWith('.epub');
+      await ReaderOpener.open(
+        context,
+        ReaderSource(
+          bookId: entry.bookId,
+          title:
+              (entry.title == null || entry.title!.trim().isEmpty)
+                  ? l10n.untitled
+                  : entry.title!,
+          author:
+              (entry.author == null || entry.author!.trim().isEmpty)
+                  ? l10n.unknownAuthor
+                  : entry.author!,
+          path: entry.path,
+          format: isEpub ? ReaderFormat.epub : ReaderFormat.pdf,
+        ),
+      );
+
+      // Friendly toast
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(l10n.addedToDownloads)));
+    } catch (e) {
+      if (!mounted) return;
+      final msg =
+          e.toString().toLowerCase().contains('unsupported')
+              ? l10n.unsupportedFileType
+              : l10n.couldNotOpenFile;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final asyncList = ref.watch(downloadedListProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("My Library (Offline)"),
-        backgroundColor: Colors.green,
-      ),
+      appBar: AppBar(title: Text(l10n.library), backgroundColor: Colors.green),
       body: RefreshIndicator(
         onRefresh: _refresh,
         child: asyncList.when(
@@ -43,18 +106,18 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               (e, _) => ListView(
                 children: [
                   const SizedBox(height: 120),
-                  Center(child: Text('Error: $e')),
+                  Center(child: Text(l10n.errorGeneric(e.toString()))),
                 ],
               ),
           data: (items) {
             if (items.isEmpty) {
               return ListView(
-                children: const [
-                  SizedBox(height: 120),
+                children: [
+                  const SizedBox(height: 120),
                   Center(
                     child: Text(
-                      "No downloads yet",
-                      style: TextStyle(color: Colors.black54),
+                      l10n.noDownloadsYet,
+                      style: const TextStyle(color: Colors.black54),
                     ),
                   ),
                 ],
@@ -66,10 +129,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               itemCount: items.length,
               itemBuilder: (context, index) {
                 final DownloadEntry e = items[index];
-                final title = e.title ?? 'Untitled';
-                final author = e.author ?? 'Unknown';
+                final title =
+                    (e.title ?? '').trim().isEmpty ? l10n.untitled : e.title!;
+                final author =
+                    (e.author ?? '').trim().isEmpty
+                        ? l10n.unknownAuthor
+                        : e.author!;
                 final cover = e.coverUrl ?? '';
-                final sizeMb = (e.bytes / (1024 * 1024)).toStringAsFixed(1);
+
+                // If your model uses a different field than `bytes`, change here:
+                final bytes = (e.bytes);
+                final sizeMb = (bytes / (1024 * 1024)).toStringAsFixed(1);
 
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 8),
@@ -118,28 +188,28 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         ref.invalidate(downloadedListProvider);
                         ref.invalidate(profileStatsProvider);
 
-                        if (!context.mounted) return;
+                        if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("$title removed from device")),
+                          SnackBar(
+                            content: Text(l10n.bookRemovedFromDevice(title)),
+                          ),
                         );
                       },
                     ),
-                    // ✅ Tap to open reader
                     onTap: () async {
                       final path = e.path; // absolute local file path
                       final isEpub = path.toLowerCase().endsWith('.epub');
 
                       final src = ReaderSource(
-                        bookId: e.bookId, // always backend ID
-                        title: title,
-                        author: author,
+                        bookId: e.bookId, // backend ID (or local id)
+                        title: title, // REQUIRED in your model
+                        author: author, // optional in your model
                         path: path,
                         format: isEpub ? ReaderFormat.epub : ReaderFormat.pdf,
                       );
 
                       await ReaderOpener.open(context, src);
                     },
-                    // Long-press → BookDetailsPage by ID
                     onLongPress: () {
                       Navigator.push(
                         context,
@@ -154,6 +224,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
             );
           },
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _importFromDevice, // ⬅️ no context argument needed
+        tooltip: AppLocalizations.of(context)!.importFromDevice,
+        child: const Icon(Icons.add),
       ),
     );
   }

@@ -1,7 +1,13 @@
+// lib/features/auth/auth_provider.dart
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:book_hub/debug/debug_jwt.dart'; // ✅ Correctly imported
 
+// ✅ Import the new api_client.dart to use the base URL provider
+import 'package:book_hub/backend/api_client.dart';
+
+// ... (AuthState class is unchanged) ...
 class AuthState {
   final bool isLoading;
   final bool isAuthenticated;
@@ -53,51 +59,28 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  final Dio _dio = Dio(
-    BaseOptions(
-      baseUrl: "https://bookhub-86lf.onrender.com/api/v1",
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    ),
-  );
-
+  // ✅ Dio client is now passed in, not created here.
+  final Dio _dio;
   final _storage = const FlutterSecureStorage();
 
-  AuthNotifier() : super(const AuthState()) {
-    // Attach token to non-auth requests only
+  // ✅ Updated constructor
+  AuthNotifier(this._dio) : super(const AuthState()) {
     _dio.interceptors.add(
       InterceptorsWrapper(
-        onRequest: (opts, handler) async {
-          final path = opts.uri.path; // Use resolved URL path
+        onRequest: (opts, handler) {
+          final path = opts.uri.path;
           final isAuthPath = path.contains('/auth/');
 
           if (!isAuthPath) {
-            final tok = state.token ?? await _storage.read(key: 'auth_token');
-            if (tok != null && tok.isNotEmpty) {
-              opts.headers['Authorization'] = 'Bearer $tok';
-            }
           } else {
-            // belt & suspenders: delete any lingering header
             opts.headers.remove('Authorization');
           }
-
-          // Debug line to verify no auth header on auth endpoints
-          // ignore: avoid_print
-          print(
-            '[REQ] ${opts.method} ${opts.uri} auth=${opts.headers['Authorization'] != null}',
-          );
-
           handler.next(opts);
         },
       ),
     );
   }
-
-  // ---------------- Public helpers used by backend layer ----------------
+  // ... (saveTokens, clearTokens are unchanged) ...
   Future<void> saveTokens({required String access, String? refresh}) async {
     await _storage.write(key: 'auth_token', value: access);
     if (refresh != null) {
@@ -119,7 +102,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
       isAuthenticated: false,
     );
   }
-  // ---------------------------------------------------------------------
 
   /// Auto login (restore tokens & profile from secure storage)
   Future<void> tryAutoLogin() async {
@@ -143,6 +125,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
         lastName: lastName,
         role: role,
       );
+      // 👇 ADDED HERE
+      debugPrintJwtClaims(token);
     } else {
       state = state.copyWith(isLoading: false);
     }
@@ -153,7 +137,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final res = await _dio.post(
         "/auth/login",
-        data: {"email": email, "password": password}, // LoginRequestDTO
+        data: {"email": email, "password": password},
         options: Options(extra: {'noAuth': true}),
       );
 
@@ -184,6 +168,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
           lastName: user['lastName']?.toString(),
           role: user['role']?.toString(),
         );
+
+        // 👇 ADDED HERE
+        debugPrintJwtClaims(access);
       } else {
         state = state.copyWith(
           isLoading: false,
@@ -207,6 +194,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  // ... (Rest of the class: register, refresh, helpers, etc. are unchanged) ...
   Future<void> register({
     required String firstName,
     required String lastName,
@@ -375,6 +363,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 }
 
+// ... (Provider definition is unchanged) ...
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier();
+  // Use the single source of truth for the base URL
+  final baseUrl = ref.watch(apiBaseUrlProvider);
+  final authDio = Dio(
+    BaseOptions(
+      // The Dio client for auth calls needs the full path including the prefix
+      baseUrl: "$baseUrl/api/v1",
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 10),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    ),
+  );
+  return AuthNotifier(authDio);
 });

@@ -1,4 +1,3 @@
-// lib/services/storage/downloaded_books_store.dart
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -86,7 +85,10 @@ class DownloadsIndex {
 class DownloadedBooksStore {
   final SharedPreferences _prefs;
   final int maxBytes; // e.g. 250MB
-  late final Directory _baseDir;
+
+  // Changed from late final Directory _baseDir
+  Directory? _baseDir;
+  bool _initialized = false; // Initialization guard
 
   DownloadedBooksStore(this._prefs, {required this.maxBytes});
 
@@ -101,24 +103,41 @@ class DownloadedBooksStore {
     return idx.totalBytes;
   }
 
+  /// Initializes the storage directory and cleans up orphaned index entries.
+  /// This method is now idempotent and safe to call multiple times.
   Future<void> init() async {
+    if (_initialized) return; // Idempotency check
+
     final docs = await getApplicationDocumentsDirectory();
     _baseDir = Directory(p.join(docs.path, 'books'));
-    if (!await _baseDir.exists()) {
-      await _baseDir.create(recursive: true);
+
+    // Ensure the directory exists
+    if (!await _baseDir!.exists()) {
+      await _baseDir!.create(recursive: true);
     }
-    // cleanup missing files
+
+    // cleanup missing files (index entries pointing to non-existent files)
     final idx = await _readIndex();
     final cleaned = Map<String, DownloadEntry>.from(idx.byBookId);
     for (final e in idx.byBookId.values) {
       if (!File(e.path).existsSync()) cleaned.remove(e.bookId);
     }
     await _writeIndex(DownloadsIndex(cleaned));
+
+    _initialized = true; // Mark ready
   }
 
+  /// Calculates the full target path for a book file.
+  /// Ensures initialization runs if it hasn't already.
   Future<String> targetPath(String bookId, {String ext = 'epub'}) async {
+    // Auto-initialize if necessary
+    if (!_initialized || _baseDir == null) {
+      await init();
+    }
+
     final safe = bookId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
-    return p.join(_baseDir.path, '$safe.$ext');
+    // _baseDir is guaranteed to be non-null after init() call above
+    return p.join(_baseDir!.path, '$safe.$ext');
   }
 
   Future<DownloadsIndex> _readIndex() async {

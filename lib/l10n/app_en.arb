@@ -1,0 +1,379 @@
+{
+  "@@locale": "en",
+
+  "publishedDate": "Published date",
+  "@publishedDate": { "description": "Form label or caption for choosing a publication date." },
+
+  "choose": "Choose",
+  "@choose": { "description": "Button text to pick/select a file or date." },
+
+  "coverImage": "Cover image",
+  "@coverImage": { "description": "Label for selecting or showing the book cover image." },
+
+  "ebookFile": "Ebook file (pdf/epub)",
+  "@ebookFile": { "description": "Label for selecting the ebook file upload (PDF/EPUB)." },
+
+  "requiredField": "Required",
+  "@requiredField": { "description": "Validation label used to mark a field as required." },
+
+  "pickDate": "Pick date",
+  "@pickDate": { "description": "Button/label to open a date picker." },
+
+  "submissionFailed": "Failed: {errorMessage}",
+  "@submissionFailed": {
+    "description": "Shown when a submission fails.",
+    "placeholders": { "errorMessage": { "type": "String" } }
+  },
+
+  "bookCreatedSuccessfully": "Book created successfully",
+  "@bookCreatedSuccessfully": { "description": "Snackbar/toast when admin successfully creates a book." },
+
+  "categoriesFailed": "Categories failed: {error}",
+  "@categoriesFailed": {
+    "description": "Shown when categories fetching fails.",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "submitABook": "Submit a Book",
+  "@submitABook": { "description": "Page title for user book submission (legacy page)." },
+
+  "bookSubmittedSuccessfully": "Book \"{bookTitle}\" submitted successfully!",
+  "@bookSubmittedSuccessfully": {
+    "description": "Toast/snackbar after user submits a book.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "bookDetails": "Book Details",
+  "@bookDetails": { "description": "Section title or page title for book details." },
+
+  "enterBookTitleHint": "Enter the book title",
+  "@enterBookTitleHint": { "description": "Hint for the book title field." },
+
+  "pleaseEnterTitle": "Please enter a title",
+  "@pleaseEnterTitle": { "description": "Validation error for empty title." },
+
+  "author": "Author",
+  "@author": { "description": "Label for author field." },
+
+  "enterAuthorNameHint": "Enter the author's name",
+  "@enterAuthorNameHint": { "description": "Hint for the author field." },
+
+  "pleaseEnterAuthor": "Please enter an author",
+  "@pleaseEnterAuthor": { "description": "Validation error for empty author." },
+
+  "description": "Description",
+  "@description": { "description": "Label for the description field." },
+
+  "briefDescriptionHint": "Brief description of the book...",
+  "@briefDescriptionHint": { "description": "Hint for description textarea." },
+
+  "pdfEpubLink": "PDF/ePub Link",
+  "@pdfEpubLink": { "description": "Label for a URL input to a PDF/EPUB." },
+
+  "pleaseEnterLink": "Please enter a link",
+  "@pleaseEnterLink": { "description": "Validation error for missing link." },
+
+  "isbn": "ISBN",
+  "@isbn": { "description": "Label for the ISBN field." },
+
+  "category": "Category",
+  "@category": { "description": "Label for a category selector." },
+
+  "selectCategoryHint": "Select a category",
+  "@selectCategoryHint": { "description": "Placeholder text in a category dropdown." },
+
+  "pleaseSelectCategory": "Please select a category",
+  "@pleaseSelectCategory": { "description": "Validation error for category not selected." },
+
+  "submissionGuidelinesNote": "Note: Please ensure your book link...",
+  "@submissionGuidelinesNote": { "description": "Disclaimer/guidelines note on submission page." },
+
+  "optionalLabel": " (Optional)",
+  "@optionalLabel": { "description": "Suffix appended to optional field labels." },
+
+  "loading": "Loading…",
+  "@loading": { "description": "Generic loading label with ellipsis." },
+
+  "book": "Book",
+  "@book": { "description": "Generic word 'Book' used in chips or headings." },
+
+  "failedToLoadBook": "Failed to load book",
+  "@failedToLoadBook": { "description": "Shown when fetching a book fails." },
+
+  "removeFromSavedTooltip": "Remove from Saved",
+  "@removeFromSavedTooltip": { "description": "Tooltip for removing a book from saved list." },
+
+  "saveTooltip": "Save",
+  "@saveTooltip": { "description": "Tooltip to save a book." },
+
+  "byAuthor": "by {authorName}",
+  "@byAuthor": {
+    "description": "Label preceding author name.",
+    "placeholders": { "authorName": { "type": "String" } }
+  },
+
+  "categoryLabel": "Category: {categoryName}",
+  "@categoryLabel": {
+    "description": "Label preceding category name.",
+    "placeholders": { "categoryName": { "type": "String" } }
+  },
+
+  "readNow": "Read Now",
+  "@readNow": { "description": "Primary action to open reader." },
+
+  "remove": "Remove",
+  "@remove": { "description": "Generic remove action." },
+
+  "download": "Download",
+  "@download": { "description": "Action to download the book." },
+
+  "retry": "Retry",
+  "@retry": { "description": "Retry action for network errors." },
+
+  "chapters": "Chapters",
+  "@chapters": { "description": "Section title for book chapters list." },
+
+  "aboutThisBook": "About This Book",
+  "@aboutThisBook": { "description": "Section title for book description." },
+
+  "noDescriptionAvailable": "No description available",
+  "@noDescriptionAvailable": { "description": "Shown when book description is empty." },
+  
+  "noDescription": "No description",
+  "@noDescription": { "description": "Text shown when an item has no description available." },
+
+  "fullBook": "Full Book",
+  "@fullBook": { "description": "Label for the full book item/file." },
+
+  "downloadUrlNotAvailable": "Download URL not available",
+  "@downloadUrlNotAvailable": { "description": "Shown when no direct download link exists." },
+
+  "addedToDownloads": "Added to Downloads",
+  "@addedToDownloads": { "description": "Snackbar when a book is added to downloads." },
+
+  "bookRemovedFromDevice": "{bookTitle} removed from device",
+  "@bookRemovedFromDevice": {
+    "description": "Snackbar when a downloaded book is deleted.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "bookSaved": "{bookTitle} saved!",
+  "@bookSaved": {
+    "description": "Snackbar when a book is saved.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "bookRemovedFromSaved": "{bookTitle} removed from Saved",
+  "@bookRemovedFromSaved": {
+    "description": "Snackbar when a book is removed from saved list.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "browseCategories": "Browse Categories",
+  "@browseCategories": { "description": "Page title for categories browser." },
+
+  "bookCount": "{count, plural, =0 {No books} one {# book} other {# books}}",
+  "@bookCount": {
+    "description": "Pluralized label for number of books in a category.",
+    "placeholders": { "count": { "type": "int" } }
+  },
+
+  "errorGeneric": "Error: {errorMessage}",
+  "@errorGeneric": {
+    "description": "Generic error line with message.",
+    "placeholders": { "errorMessage": { "type": "String" } }
+  },
+
+  "noDownloadsYet": "No downloads yet",
+  "@noDownloadsYet": { "description": "Empty state for library downloads page." },
+
+  "untitled": "Untitled",
+  "@untitled": { "description": "Fallback title when none is present." },
+
+  "unknownAuthor": "Unknown",
+  "@unknownAuthor": { "description": "Fallback author name when none is present." },
+
+  "requestABook": "Request a Book",
+  "@requestABook": { "description": "Page title for the request book flow." },
+
+  "requestBookDescription": "Can't find the book you're looking for...",
+  "@requestBookDescription": { "description": "Short explainer on the request page." },
+
+  "bookTitle": "Book Title",
+  "@bookTitle": { "description": "Label for book title input." },
+
+  "enterTitleValidation": "Enter a title",
+  "@enterTitleValidation": { "description": "Validation message for missing title." },
+
+  "descriptionOptional": "Description (optional)",
+  "@descriptionOptional": { "description": "Label for an optional description field." },
+
+  "additionalDetailsHint": "Any additional details about the book...",
+  "@additionalDetailsHint": { "description": "Hint for the additional details textarea." },
+
+  "helpUsFindBook": "Help us find the exact book...",
+  "@helpUsFindBook": { "description": "Helper text guiding the user for more info." },
+
+  "submitRequest": "Submit Request",
+  "@submitRequest": { "description": "Primary action to submit a request." },
+
+  "requestSubmitted": "Request for \"{bookTitle}\" submitted!",
+  "@requestSubmitted": {
+    "description": "Toast/snackbar when a request is submitted.",
+    "placeholders": { "bookTitle": { "type": "String" } }
+  },
+
+  "requestResponseTime": "We typically respond to book requests...",
+  "@requestResponseTime": { "description": "Note describing response times." },
+
+  "noSavedBooksYet": "No saved books yet",
+  "@noSavedBooksYet": { "description": "Empty state for saved books page." },
+
+  "removedFromSaved": "Removed from Saved",
+  "@removedFromSaved": { "description": "Toast/snackbar when removing from saved." },
+
+  "failedToLoadDetails": "Failed to load details",
+  "@failedToLoadDetails": { "description": "Shown when details fetch fails." },
+
+  "search": "Search",
+  "@search": { "description": "Search label in app bar or field." },
+
+  "searchOfflineUnavailable": "Offline — search is unavailable",
+  "@searchOfflineUnavailable": { "description": "Banner/message when search can't be used offline." },
+
+  "searchHint": "Search books, authors, categories…",
+  "@searchHint": { "description": "Placeholder in the search input." },
+
+  "searchingFor": "Searching: \"{query}\"",
+  "@searchingFor": {
+    "description": "Status line showing the current search query.",
+    "placeholders": { "query": { "type": "String" } }
+  },
+
+  "offlineMessage": "You are offline. Try again...",
+  "@offlineMessage": { "description": "Shown in banners when offline." },
+
+  "searchFailed": "Failed to search. {error}",
+  "@searchFailed": {
+    "description": "Shown when search request fails.",
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "noResultsTryAnotherKeyword": "No results. Try another keyword.",
+  "@noResultsTryAnotherKeyword": { "description": "Empty state after search returns nothing." },
+
+  "paginationStatus": "Page {currentPage} of {totalPages}",
+  "@paginationStatus": {
+    "description": "Pagination indicator showing current and total pages.",
+    "placeholders": {
+      "currentPage": { "type": "int" },
+      "totalPages": { "type": "int" }
+    }
+  },
+
+  "previous": "Prev",
+  "@previous": { "description": "Previous page button label." },
+
+  "next": "Next",
+  "@next": { "description": "Next page button label." },
+
+  "searchEmptyHint": "Search for books, authors, or categories",
+  "@searchEmptyHint": { "description": "Empty-state hint shown before searching." },
+
+  "anonymousUser": "Anonymous User",
+  "@anonymousUser": { "description": "Placeholder name when the user is not logged in." },
+
+  "noEmail": "No email available",
+  "@noEmail": { "description": "Placeholder text when the user's email is missing or unknown." },
+
+  "saved": "Saved",
+  "@saved": { "description": "Tab/label showing the user's saved books." },
+
+  "library": "Library",
+  "@library": { "description": "Tab/label showing the user's downloaded library." },
+
+  "history": "History",
+  "@history": { "description": "Tab/label showing reading history." },
+
+  "settings": "Settings",
+  "@settings": { "description": "Menu item or page title for application settings." },
+
+  "readingHistory": "Reading History",
+  "@readingHistory": { "description": "Menu item to open the user's reading history page." },
+
+  "adminCreateBook": "Create / Submit Book",
+  "@adminCreateBook": { "description": "Admin menu item to open the page for creating or uploading a book." },
+
+  "manageRequests": "Manage Requests",
+  "@manageRequests": { "description": "Admin menu item for the list of user requests." },
+
+  "reviewSubmissions": "Review Submissions",
+  "@reviewSubmissions": { "description": "Admin menu item for reviewing submitted books." },
+
+  "createBook": "Create Book",
+  "@createBook": { "description": "Primary action button text for creating a book." },
+
+  "importFromDevice": "Import from device",
+  "@importFromDevice": { "description": "Tooltip/title for the FAB to import local files." },
+
+  "unsupportedFileType": "Unsupported file type",
+  "@unsupportedFileType": { "description": "Shown when the selected file isn't a supported reader type." },
+
+  "couldNotOpenFile": "Could not open file",
+  "@couldNotOpenFile": { "description": "Generic error when opening a local file fails." },
+
+  "openingFile": "Opening file…",
+  "@openingFile": { "description": "Feedback when starting to open a picked file." },
+
+  "addCategory": "Add Category",
+  "@addCategory": {
+    "description": "Button label to add a new category."
+  },
+  
+  "categoryName": "Category name",
+  "@categoryName": {
+    "description": "Label for the input field where admin enters a category name."
+  },
+
+  "categoryNameHint": "e.g., Fantasy",
+  "@categoryNameHint": {
+    "description": "Hint text shown in the category name input field."
+  },
+
+  "create": "Create",
+  "@create": {
+    "description": "Button label to confirm creation of a new item."
+  },
+
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Button label to dismiss a dialog without changes."
+  },
+
+  "categoryCreated": "Category \"{name}\" created",
+  "@categoryCreated": {
+    "description": "Snackbar message after successfully creating a category.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Fantasy"
+      }
+    }
+  },
+
+  "categoryCreateFailed": "Failed to create category: {error}",
+  "@categoryCreateFailed": {
+    "description": "Error message shown if category creation fails.",
+    "placeholders": {
+      "error": {
+        "type": "String",
+        "example": "Network error"
+      }
+    }
+  },
+
+  "noCategoriesYet": "No categories yet",
+  "@noCategoriesYet": {
+    "description": "Message shown if no categories exist yet."
+  }
+}

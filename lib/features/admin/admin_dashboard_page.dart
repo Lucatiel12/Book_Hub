@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:book_hub/features/admin/submit_book_page.dart';
+import 'package:book_hub/features/admin/admin_submit_book_page.dart';
 import 'package:book_hub/features/admin/requests_page.dart';
 
 class AdminDashboardPage extends StatelessWidget {
@@ -17,10 +17,7 @@ class AdminDashboardPage extends StatelessWidget {
           ),
         ),
         body: const TabBarView(
-          children: [
-            SubmitBookPage(),
-            RequestsPage(), // scaffolded for later
-          ],
+          children: [AdminSubmitBookPage(), RequestsPage()],
         ),
       ),
     );

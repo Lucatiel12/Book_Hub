@@ -1,4 +1,4 @@
-// lib/features/profile/profile_page.dart
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,6 +13,7 @@ class ProfilePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context)!;
     final authState = ref.watch(authProvider);
     final authNotifier = ref.read(authProvider.notifier);
 
@@ -29,7 +30,7 @@ class ProfilePage extends ConsumerWidget {
     final email =
         (authState.email ?? '').trim().isNotEmpty
             ? authState.email!
-            : 'No email available';
+            : l10n.noEmail;
     final role = (authState.role ?? 'USER').trim();
     final isAdmin = role.toUpperCase() == 'ADMIN';
 
@@ -40,12 +41,15 @@ class ProfilePage extends ConsumerWidget {
           (s) => Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _ProfileStat(label: 'Saved', value: s.savedCount.toString()),
+              _ProfileStat(label: l10n.saved, value: s.savedCount.toString()),
               _ProfileStat(
-                label: 'Library',
+                label: l10n.library,
                 value: s.downloadedCount.toString(),
               ),
-              _ProfileStat(label: 'History', value: s.historyCount.toString()),
+              _ProfileStat(
+                label: l10n.history,
+                value: s.historyCount.toString(),
+              ),
             ],
           ),
       loading:
@@ -77,7 +81,7 @@ class ProfilePage extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             Text(
-              authState.isAuthenticated ? fullName : 'Anonymous User',
+              authState.isAuthenticated ? fullName : l10n.anonymousUser,
               style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             Text(email, style: const TextStyle(color: Colors.black54)),
@@ -117,7 +121,7 @@ class ProfilePage extends ConsumerWidget {
             ),
             _buildOptionTile(
               icon: Icons.settings,
-              title: 'Settings',
+              title: l10n.settings,
               onTap: () {
                 Navigator.push(
                   context,
@@ -127,7 +131,7 @@ class ProfilePage extends ConsumerWidget {
             ),
             _buildOptionTile(
               icon: Icons.history,
-              title: 'Reading History',
+              title: l10n.readingHistory,
               onTap: () {
                 Navigator.push(
                   context,
@@ -151,21 +155,24 @@ class ProfilePage extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               _buildOptionTile(
-                icon: Icons.inbox_outlined,
-                title: 'Manage Requests',
+                icon: Icons.upload_file,
+                title: l10n.adminCreateBook,
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Open: Manage Requests')),
-                  );
+                  Navigator.of(context).pushNamed('/admin/submit-book');
+                },
+              ),
+              _buildOptionTile(
+                icon: Icons.inbox_outlined,
+                title: l10n.manageRequests,
+                onTap: () {
+                  Navigator.of(context).pushNamed('/admin/requests');
                 },
               ),
               _buildOptionTile(
                 icon: Icons.fact_check_outlined,
-                title: 'Review Submissions',
+                title: l10n.reviewSubmissions,
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Open: Review Submissions')),
-                  );
+                  Navigator.of(context).pushNamed('/admin/submissions');
                 },
               ),
             ],
@@ -176,7 +183,7 @@ class ProfilePage extends ConsumerWidget {
               color: Colors.red,
               onTap: () async {
                 await authNotifier.logout();
-                if (!context.mounted) return; // guard the same context you use
+                if (!context.mounted) return;
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(builder: (_) => const AuthPage()),
