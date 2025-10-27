@@ -2,17 +2,15 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path/path.dart' as p; // for extension/basename
+import 'package:path/path.dart' as p;
 
-import 'reader_models.dart' as rm; // alias
+import 'reader_models.dart' as rm;
 import 'reader_bookmarks_store.dart';
 import 'pdf_reader_page.dart';
 import 'epub_reader_page.dart';
 import 'package:book_hub/services/reader_prefs.dart';
 
 class ReaderOpener {
-  /// Open a book using a prepared ReaderSource (local or already-resolved).
-  /// No network calls here — just uses the IDs/paths provided.
   static Future<void> open(BuildContext context, rm.ReaderSource src) async {
     debugPrint("Opening reader: ${src.title} (${src.format.name})");
 
@@ -24,13 +22,12 @@ class ReaderOpener {
             MaterialPageRoute(
               builder:
                   (_) => EpubReaderPage(
-                    bookId: src.bookId, // ✅ real backend (or stable local) ID
-                    filePath: src.path, // local .epub path
+                    bookId: src.bookId,
+                    filePath: src.path,
                     theme: theme,
-                    // pass metadata for nicer history (server + offline)
                     bookTitle: src.title,
                     author: src.author,
-                    // coverUrl: (add here if your ReaderSource carries it)
+                    showProgressUI: false, // 👈 hide progress bars & % in EPUB
                   ),
             ),
           );
@@ -47,9 +44,6 @@ class ReaderOpener {
     }
   }
 
-  /// Open a **local** file directly by filesystem path.
-  /// Builds a minimal ReaderSource with a stable local id.
-  /// Returns `true` if the file type is supported and we attempted to open it.
   static Future<bool> openLocal(BuildContext context, String filePath) async {
     final ext = p.extension(filePath).toLowerCase();
     final baseName = p.basenameWithoutExtension(filePath);
@@ -60,16 +54,15 @@ class ReaderOpener {
     } else if (ext == '.epub') {
       fmt = rm.ReaderFormat.epub;
     } else {
-      return false; // unsupported type
+      return false;
     }
 
-    // Stable local id; adjust scheme if you prefer
     final localId = 'local:$baseName';
 
     final src = rm.ReaderSource(
       bookId: localId,
       title: baseName.isEmpty ? 'Local file' : baseName,
-      author: null, // unknown for local imports
+      author: null,
       path: filePath,
       format: fmt,
     );
@@ -82,7 +75,6 @@ class ReaderOpener {
     }
   }
 
-  /// Save an EPUB bookmark at the current position based on last persisted CFI.
   static Future<void> addEpubBookmark(String bookId, {String? label}) async {
     final sp = await SharedPreferences.getInstance();
     final store = ReaderBookmarksStore(sp);

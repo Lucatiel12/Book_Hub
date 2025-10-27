@@ -31,6 +31,7 @@ class BookContributionRequestDto {
   final String? description; // include drive link here if you want
   final List<String>? categoryIds;
   final String? isbn;
+  final String? bookUrl; // <-- add this
 
   BookContributionRequestDto({
     required this.title,
@@ -38,6 +39,7 @@ class BookContributionRequestDto {
     this.description,
     this.categoryIds,
     this.isbn,
+    this.bookUrl, // <-- add this
   });
 
   Map<String, dynamic> toJson() => {
@@ -48,5 +50,7 @@ class BookContributionRequestDto {
     if (categoryIds != null && categoryIds!.isNotEmpty)
       'categoryIds': categoryIds,
     if (isbn != null && isbn!.isNotEmpty) 'isbn': isbn,
+    if (bookUrl != null && bookUrl!.isNotEmpty)
+      'bookUrl': bookUrl, // <-- add this
   };
 }

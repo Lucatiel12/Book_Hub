@@ -1,19 +1,19 @@
 // lib/reader/pdf_reader_page.dart
 import 'package:flutter/material.dart';
-import 'package:book_hub/features/reading/reading_models.dart';
-import 'package:book_hub/features/reading/reading_providers.dart';
-import 'package:book_hub/features/reading/reading_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'reader_models.dart' as rm; // 👈 alias
+import 'reader_models.dart' as rm; // alias
 import 'reader_bookmarks_store.dart';
-import 'package:book_hub/services/storage/reading_history_store.dart';
 import 'package:book_hub/models/history_entry.dart';
+import 'package:book_hub/features/reading/reading_providers.dart';
+import 'package:book_hub/features/reading/reading_repository.dart';
+import 'package:book_hub/features/reading/reading_models.dart';
+import 'package:book_hub/services/storage/reading_history_store.dart';
 
 class PdfReaderPage extends ConsumerStatefulWidget {
-  final rm.ReaderSource src; // 👈 use alias type
+  final rm.ReaderSource src;
   const PdfReaderPage({super.key, required this.src});
 
   @override
@@ -25,8 +25,8 @@ class _PdfReaderPageState extends ConsumerState<PdfReaderPage> {
   ReaderBookmarksStore? _store;
   bool _storeReady = false;
   int _currentPage = 1;
-  _ReaderSession? _session; // for backend saves
-  int? _totalPages; // set when doc loads
+  int? _totalPages;
+  _ReaderSession? _session;
 
   @override
   void initState() {
@@ -34,32 +34,31 @@ class _PdfReaderPageState extends ConsumerState<PdfReaderPage> {
     _ctrl = PdfControllerPinch(document: PdfDocument.openFile(widget.src.path));
     _initStoreAndResume();
 
-    // 🔸 LOCAL HISTORY UPSERT
+    // Local history snapshot
     try {
-      final store = ref.read(readingHistoryStoreProvider);
-      store.upsert(
+      final history = ref.read(readingHistoryStoreProvider);
+      history.upsert(
         HistoryEntry(
           bookId: widget.src.bookId,
           title: widget.src.title,
-          author: '', // add if you have it on ReaderSource
-          coverUrl: null, // add if you have it on ReaderSource
+          author: '',
+          coverUrl: null,
           openedAtMillis: DateTime.now().millisecondsSinceEpoch,
-          chapterIndex: 0, // PDFs don’t have chapters; keep 0
-          scrollProgress: 0.0, // will be updated as pages change
+          chapterIndex: 0,
+          scrollProgress: 0.0,
         ),
       );
     } catch (_) {}
 
-    // 🔗 create session from Riverpod
+    // Backend session
     final repo = ref.read(readingRepositoryProvider);
     _session = _ReaderSession(bookId: widget.src.bookId, repo: repo);
 
-    // Do network calls after first frame
+    // Resume from server if available
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _session?.onOpen(); // POST /history
-      final prog = await _session?.loadProgress(); // GET /progress
+      await _session?.onOpen();
+      final prog = await _session?.loadProgress();
 
-      // If server has a page in locator, go there first
       final serverPage = (prog?.locator?['page'] as num?)?.toInt();
       if (serverPage != null && serverPage >= 1) {
         _currentPage = serverPage;
@@ -67,7 +66,6 @@ class _PdfReaderPageState extends ConsumerState<PdfReaderPage> {
         return;
       }
 
-      // If percent only, approximate to a page once we know total pages
       if (prog?.percent != null && prog!.percent > 0 && _totalPages != null) {
         final approx = (prog.percent.clamp(0.0, 1.0) * _totalPages!)
             .ceil()
@@ -81,6 +79,7 @@ class _PdfReaderPageState extends ConsumerState<PdfReaderPage> {
   Future<void> _initStoreAndResume() async {
     final sp = await SharedPreferences.getInstance();
     _store = ReaderBookmarksStore(sp);
+
     final last = await _store!.getLast(widget.src.bookId);
     if (!mounted) return;
     if (last?.pdfPage != null && last!.pdfPage! >= 1) {
@@ -92,78 +91,84 @@ class _PdfReaderPageState extends ConsumerState<PdfReaderPage> {
 
   @override
   void dispose() {
-    // flush last position
     final total = _totalPages ?? 0;
     if (total > 0) {
-      final pct = _overallPercentFromPages(_currentPage, total);
+      final pct = _progressPercent(_currentPage, total);
       _session?.onPosition(percent: pct, locator: {'page': _currentPage});
     }
     _session?.onClose();
-
     _ctrl.dispose();
     super.dispose();
   }
 
-  double _overallPercentFromPages(int page, int total) {
+  double _progressPercent(int page, int total) {
     if (total <= 0) return 0.0;
-    final p = (page - 1) / total; // 0-based → 0..(1 - 1/total)
-    return p.clamp(0.0, 1.0);
+    return ((page - 1) / total).clamp(0.0, 1.0);
   }
 
-  Future<void> _addBookmark() async {
-    if (!_storeReady || _store == null) return;
-    await _store!.add(
-      rm.ReaderBookmark(
-        bookId: widget.src.bookId,
-        format: rm.ReaderFormat.pdf,
-        pdfPage: _currentPage,
-        pdfOffset: null,
-      ),
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Bookmark added')));
+  // ---------- Page nav ----------
+  void _goDelta(int delta) {
+    if (_totalPages == null) return;
+    final next = (_currentPage + delta).clamp(1, _totalPages!);
+    if (next != _currentPage) {
+      _ctrl.jumpToPage(next);
+    }
   }
 
-  Future<void> _openBookmarks() async {
-    if (!_storeReady || _store == null) return;
-    final items = await _store!.list(widget.src.bookId);
-    if (!mounted) return;
-    await showModalBottomSheet(
+  Future<void> _jumpToPageDialog() async {
+    if (_totalPages == null || _totalPages == 0) return;
+    final tc = TextEditingController(text: _currentPage.toString());
+    final formKey = GlobalKey<FormState>();
+
+    final picked = await showDialog<int>(
       context: context,
-      showDragHandle: true,
       builder:
-          (ctx) => ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            itemCount: items.length,
-            separatorBuilder: (_, __) => const Divider(),
-            itemBuilder: (ctx, i) {
-              final bm = items[i];
-              if (bm.format != rm.ReaderFormat.pdf) {
-                return const SizedBox.shrink();
-              }
-              final page = (bm.pdfPage ?? 1).clamp(1, 1 << 20);
-              return ListTile(
-                leading: const Icon(Icons.bookmark),
-                title: Text('Page $page'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _ctrl.jumpToPage(page);
-                },
-                trailing: IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () async {
-                    await _store!.removeAt(widget.src.bookId, i);
-                    if (!context.mounted) return;
-                    Navigator.pop(ctx);
-                    _openBookmarks();
-                  },
+          (ctx) => AlertDialog(
+            title: const Text('Go to page'),
+            content: Form(
+              key: formKey,
+              child: TextFormField(
+                controller: tc,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  hintText: '1 – ${_totalPages!}',
+                  border: const OutlineInputBorder(),
                 ),
-              );
-            },
+                validator: (v) {
+                  final n = int.tryParse((v ?? '').trim());
+                  if (n == null) return 'Enter a number';
+                  if (n < 1 || n > _totalPages!)
+                    return 'Must be 1–${_totalPages!}';
+                  return null;
+                },
+                onFieldSubmitted: (_) {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.of(ctx).pop(int.parse(tc.text.trim()));
+                  }
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (formKey.currentState!.validate()) {
+                    Navigator.pop(ctx, int.parse(tc.text.trim()));
+                  }
+                },
+                child: const Text('Go'),
+              ),
+            ],
           ),
     );
+
+    if (picked != null) {
+      _ctrl.jumpToPage(picked);
+    }
   }
 
   Future<void> _persistLastPage(int page) async {
@@ -182,66 +187,113 @@ class _PdfReaderPageState extends ConsumerState<PdfReaderPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.src.title, overflow: TextOverflow.ellipsis),
+        title: Text(
+          '${widget.src.title} • $_currentPage of ${_totalPages ?? 0}',
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           IconButton(
-            tooltip: 'Bookmarks',
-            icon: const Icon(Icons.bookmarks_outlined),
-            onPressed: _openBookmarks,
-          ),
-          IconButton(
-            tooltip: 'Add bookmark',
-            icon: const Icon(Icons.bookmark_add_outlined),
-            onPressed: _addBookmark,
+            tooltip: 'Go to page…',
+            icon: const Icon(Icons.dialpad), // simple page-jump icon
+            onPressed: (_totalPages ?? 0) == 0 ? null : _jumpToPageDialog,
           ),
         ],
       ),
-      body: PdfViewPinch(
-        controller: _ctrl,
-        onDocumentLoaded: (doc) {
-          if (mounted) {
-            setState(() {
-              _totalPages = doc.pagesCount;
-            });
-          }
-        },
-        onPageChanged: (page) async {
-          if (mounted) {
-            setState(() {
-              _currentPage = page;
-            });
-          }
-          await _persistLastPage(page);
+      body: Column(
+        children: [
+          Expanded(
+            child: PdfViewPinch(
+              controller: _ctrl,
+              onDocumentLoaded: (doc) {
+                if (mounted) setState(() => _totalPages = doc.pagesCount);
+              },
+              onPageChanged: (page) async {
+                if (mounted) setState(() => _currentPage = page);
+                await _persistLastPage(page);
 
-          try {
-            final total = _totalPages ?? 0;
-            final store = ref.read(readingHistoryStoreProvider);
-            await store.upsert(
-              HistoryEntry(
-                bookId: widget.src.bookId,
-                title: widget.src.title,
-                author: '',
-                coverUrl: null,
-                openedAtMillis: DateTime.now().millisecondsSinceEpoch,
-                chapterIndex: 0,
-                scrollProgress:
-                    (total > 0)
-                        ? _overallPercentFromPages(_currentPage, total)
-                        : 0.0,
+                try {
+                  final total = _totalPages ?? 0;
+                  final history = ref.read(readingHistoryStoreProvider);
+                  await history.upsert(
+                    HistoryEntry(
+                      bookId: widget.src.bookId,
+                      title: widget.src.title,
+                      author: '',
+                      coverUrl: null,
+                      openedAtMillis: DateTime.now().millisecondsSinceEpoch,
+                      chapterIndex: 0,
+                      scrollProgress:
+                          (total > 0)
+                              ? _progressPercent(_currentPage, total)
+                              : 0.0,
+                    ),
+                  );
+                } catch (_) {}
+
+                final total = _totalPages ?? 0;
+                if (total > 0) {
+                  final percent = _progressPercent(_currentPage, total);
+                  _session?.onPosition(
+                    percent: percent,
+                    locator: {'page': _currentPage},
+                  );
+                }
+              },
+            ),
+          ),
+          SafeArea(
+            top: false,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  top: BorderSide(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.outlineVariant.withOpacity(.4),
+                  ),
+                ),
               ),
-            );
-          } catch (_) {}
-
-          // 🔁 send progress to backend
-          final total = _totalPages ?? 0;
-          if (total > 0) {
-            final percent = _overallPercentFromPages(_currentPage, total);
-            _session?.onPosition(
-              percent: percent,
-              locator: {'page': _currentPage},
-            );
-          }
-        },
+              child: Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Previous page',
+                    icon: const Icon(Icons.chevron_left),
+                    onPressed: (_currentPage > 1) ? () => _goDelta(-1) : null,
+                  ),
+                  Expanded(
+                    child:
+                        (_totalPages == null || _totalPages! <= 1)
+                            ? const SizedBox.shrink()
+                            : Slider(
+                              value:
+                                  _currentPage
+                                      .clamp(1, _totalPages!)
+                                      .toDouble(),
+                              min: 1,
+                              max: _totalPages!.toDouble(),
+                              divisions: _totalPages! - 1,
+                              label: '$_currentPage',
+                              onChanged:
+                                  (v) =>
+                                      setState(() => _currentPage = v.round()),
+                              onChangeEnd: (v) => _ctrl.jumpToPage(v.round()),
+                            ),
+                  ),
+                  IconButton(
+                    tooltip: 'Next page',
+                    icon: const Icon(Icons.chevron_right),
+                    onPressed:
+                        (_totalPages != null && _currentPage < _totalPages!)
+                            ? () => _goDelta(1)
+                            : null,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -100,6 +100,9 @@ class EpubReaderPage extends ConsumerStatefulWidget {
   final String? author;
   final String? coverUrl;
 
+  /// 👇 NEW: hide only the visual progress (bars/%), keep sync logic intact.
+  final bool showProgressUI;
+
   const EpubReaderPage({
     super.key,
     required this.bookId,
@@ -111,6 +114,7 @@ class EpubReaderPage extends ConsumerStatefulWidget {
     this.bookTitle,
     this.author,
     this.coverUrl,
+    this.showProgressUI = true, // default keeps current behavior
   }) : assert(
          (filePath != null ? 1 : 0) +
                  (assetPath != null ? 1 : 0) +
@@ -501,24 +505,25 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
               ),
         ),
         actions: [
-          // Chapter progress % (within)
-          ValueListenableBuilder(
-            valueListenable: ctrl.currentValueListenable,
-            builder: (context, _, __) {
-              final v = ctrl.currentValueListenable.value as dynamic;
-              final p = _chapterPercent(v);
-              final pct = (p * 100.0).clamp(0.0, 100.0);
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Center(
-                  child: Text(
-                    '${pct.toStringAsFixed(0)}%',
-                    style: TextStyle(color: c.text),
+          // Chapter progress % (within) — only if enabled
+          if (widget.showProgressUI)
+            ValueListenableBuilder(
+              valueListenable: ctrl.currentValueListenable,
+              builder: (context, _, __) {
+                final v = ctrl.currentValueListenable.value as dynamic;
+                final p = _chapterPercent(v);
+                final pct = (p * 100.0).clamp(0.0, 100.0);
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Center(
+                    child: Text(
+                      '${pct.toStringAsFixed(0)}%',
+                      style: TextStyle(color: c.text),
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            ),
           IconButton(
             tooltip: 'Settings',
             icon: const Icon(Icons.tune),
@@ -532,8 +537,9 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
       body: NotificationListener<ScrollNotification>(
         onNotification: (_) => _onAnyScroll(ctrl),
         child: MediaQuery(
-          // text scale
-          data: MediaQuery.of(context).copyWith(textScaleFactor: _fontScale),
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(_fontScale)),
           child: DefaultTextStyle.merge(
             style: TextStyle(
               color: c.text,
@@ -550,33 +556,42 @@ class _EpubReaderPageState extends ConsumerState<EpubReaderPage> {
                     _controller?.tableOfContentsListenable.value.length ?? 0;
                 final i0 = _zeroBasedChapter(v, tocLen: tocLen);
                 _persistChapter(i0);
-
-                final cfi = ctrl.generateEpubCfi();
-                if (cfi != null && cfi.isNotEmpty) {
-                  final s = _session;
-                  if (s != null) {
-                    final pct = _getOverallPercentForSession(ctrl);
-                    final loc = {'cfi': cfi, 'chapter': i0};
-                    s.onPosition(percent: pct, locator: loc);
-                  }
-                }
               },
             ),
           ),
         ),
       ),
-      bottomNavigationBar: _BottomBar(controller: ctrl, colors: c),
+      bottomNavigationBar: _BottomBar(
+        controller: ctrl,
+        colors: c,
+        showProgressUI: widget.showProgressUI, // 👈 pass flag down
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: Builder(
+        builder:
+            (ctx) => FloatingActionButton.small(
+              heroTag: 'tocFab',
+              tooltip: 'Chapters',
+              onPressed: () => Scaffold.of(ctx).openDrawer(),
+              child: const Icon(Icons.list_alt),
+            ),
+      ),
     );
-  }
-}
+  } // <-- closes build
+} // <-- closes _EpubReaderPageState
 
 /// ======================
-///  Bottom Bar
+///  Bottom Bar (TOC-aware)
 /// ======================
 class _BottomBar extends StatelessWidget {
   final EpubController controller;
   final _ReaderChromeColors colors;
-  const _BottomBar({required this.controller, required this.colors});
+  final bool showProgressUI; // 👈 NEW
+  const _BottomBar({
+    required this.controller,
+    required this.colors,
+    required this.showProgressUI,
+  });
 
   int _zeroBasedChapter(dynamic v, {required int tocLen}) {
     final raw = ((v?.chapterNumber ?? 1) as num).toInt();
@@ -585,7 +600,7 @@ class _BottomBar extends StatelessWidget {
 
   void _goChapterDelta(int delta) {
     final toc = controller.tableOfContentsListenable.value;
-    if (toc.isEmpty) return;
+    if (toc.isEmpty) return; // nothing to do
 
     final v = controller.currentValueListenable.value as dynamic;
     final curr0 = _zeroBasedChapter(v, tocLen: toc.length);
@@ -626,90 +641,114 @@ class _BottomBar extends StatelessWidget {
           border: Border(top: BorderSide(color: colors.divider, width: 0.5)),
         ),
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ValueListenableBuilder(
-              valueListenable: controller.currentValueListenable,
-              builder: (context, _, __) {
-                final v = controller.currentValueListenable.value as dynamic;
+        child: ValueListenableBuilder(
+          valueListenable: controller.currentValueListenable,
+          builder: (context, _, __) {
+            final v = controller.currentValueListenable.value as dynamic;
 
-                final within = _chapterPercent(v);
-                final chapterPct = (within * 100).toStringAsFixed(0);
+            final tocLen = controller.tableOfContentsListenable.value.length;
+            final hasToc = tocLen > 0;
 
-                final overall = _overallPercent(v);
-                final tocLen =
-                    controller.tableOfContentsListenable.value.length;
-                final chapterIdx0 = _zeroBasedChapter(v, tocLen: tocLen);
+            final within = _chapterPercent(v);
+            final chapterPct = (within * 100).toStringAsFixed(0);
 
-                final title =
-                    (v?.chapter?.Title ?? '-')
-                        .toString()
-                        .replaceAll('\n', '')
-                        .trim();
+            final overall = _overallPercent(v);
+            final chapterIdx0 =
+                hasToc ? _zeroBasedChapter(v, tocLen: tocLen) : 0;
 
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: LinearProgressIndicator(
-                            value: within,
-                            backgroundColor: colors.progressBg,
-                          ),
+            final title =
+                (v?.chapter?.Title ?? '-')
+                    .toString()
+                    .replaceAll('\n', '')
+                    .trim();
+
+            // Enable/disable nav buttons based on TOC and position
+            final canPrev = hasToc && chapterIdx0 > 0;
+            final canNext = hasToc && chapterIdx0 < tocLen - 1;
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Progress rows — only when enabled
+                if (showProgressUI) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: LinearProgressIndicator(
+                          value: within,
+                          backgroundColor: colors.progressBg,
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '$chapterPct%',
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$chapterPct%',
+                        style: TextStyle(color: colors.textSecondary),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: LinearProgressIndicator(
+                          value: overall,
+                          backgroundColor: colors.progressBg,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          hasToc
+                              ? 'Ch ${chapterIdx0 + 1}/$tocLen · $title'
+                              : title,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: colors.textSecondary),
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ] else ...[
+                  // When hidden, still show the chapter title line (no bars/%)
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          hasToc
+                              ? 'Ch ${chapterIdx0 + 1}/$tocLen · $title'
+                              : title,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: colors.textSecondary),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // Navigation controls — always visible
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: canPrev ? () => _goChapterDelta(-1) : null,
+                        icon: const Icon(Icons.chevron_left),
+                        label: const Text('Previous'),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: LinearProgressIndicator(
-                            value: overall,
-                            backgroundColor: colors.progressBg,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Ch ${chapterIdx0 + 1}/$tocLen · $title',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: colors.textSecondary),
-                          ),
-                        ),
-                      ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: canNext ? () => _goChapterDelta(1) : null,
+                        icon: const Icon(Icons.chevron_right),
+                        label: const Text('Next'),
+                      ),
                     ),
                   ],
-                );
-              },
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _goChapterDelta(-1),
-                    icon: const Icon(Icons.chevron_left),
-                    label: const Text('Previous'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _goChapterDelta(1),
-                    icon: const Icon(Icons.chevron_right),
-                    label: const Text('Next'),
-                  ),
                 ),
               ],
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

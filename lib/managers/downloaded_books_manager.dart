@@ -1,14 +1,12 @@
-// lib/managers/downloaded_books_manager.dart
 import 'dart:io';
-import 'dart:convert'; // for base64Url - NEW
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import 'package:book_hub/backend/api_client.dart'; // Added per patch
+import 'package:book_hub/backend/api_client.dart';
 import 'package:book_hub/services/storage/downloaded_books_store.dart';
-// Invalidate these when downloads change
 import 'package:book_hub/features/books/providers/saved_downloaded_providers.dart';
 import 'package:book_hub/features/profile/profile_stats_provider.dart';
 
@@ -23,11 +21,9 @@ class DownloadedBooksManager {
   Future<void> touch(String bookId) => _store.touch(bookId);
   Future<List<DownloadEntry>> list() => _store.list();
 
-  /// Delete a downloaded book and refresh dependent providers.
   Future<void> delete(String bookId) async {
     final entry = await _store.getByBookId(bookId);
 
-    // Delete file on disk (best-effort)
     if (entry != null && entry.path.isNotEmpty) {
       try {
         final f = File(entry.path);
@@ -39,16 +35,13 @@ class DownloadedBooksManager {
       }
     }
 
-    // Delete DB row
     await _store.delete(bookId);
 
-    // Keep UI in sync
+    // Keep per-book & stats in sync (do NOT invalidate the list here)
     ref.invalidate(isBookDownloadedProvider(bookId));
-    ref.invalidate(downloadedListProvider);
     ref.invalidate(profileStatsProvider);
   }
 
-  /// Simple (non-resumable) download API.
   Future<void> downloadFromUrl({
     required String bookId,
     required String url,
@@ -76,13 +69,10 @@ class DownloadedBooksManager {
       coverUrl: coverUrl,
     );
 
-    // Invalidate after indexing the file
     ref.invalidate(isBookDownloadedProvider(bookId));
-    ref.invalidate(downloadedListProvider);
     ref.invalidate(profileStatsProvider);
   }
 
-  /// Resumable streaming download with .part + Range support.
   Future<void> downloadResumable({
     required String bookId,
     required String url,
@@ -93,7 +83,6 @@ class DownloadedBooksManager {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    // compute target/part paths
     final docs = await getApplicationDocumentsDirectory();
     final safeId = bookId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
     final dir = Directory(p.join(docs.path, 'books'));
@@ -103,60 +92,45 @@ class DownloadedBooksManager {
     final partPath = '$finalPath.part';
     final partFile = File(partPath);
 
-    // existing partial
     int existingBytes = 0;
     if (await partFile.exists()) {
       existingBytes = await partFile.length();
     } else {
-      // ensure any old finalized file is removed before starting
       final oldFinal = File(finalPath);
       if (await oldFinal.exists()) await oldFinal.delete();
     }
 
-    // prepare headers for resume
     final headers = <String, dynamic>{};
     if (existingBytes > 0) headers['Range'] = 'bytes=$existingBytes-';
 
-    Response<ResponseBody> resp;
-    try {
-      resp = await _dio.get<ResponseBody>(
-        url,
-        options: Options(
-          responseType: ResponseType.stream,
-          headers: headers,
-          followRedirects: true,
-          validateStatus: (c) => c != null && c >= 200 && c < 400,
-        ),
-        cancelToken: cancelToken,
-      );
-    } on DioException {
-      // handshake failed - keep .part for later resume
-      rethrow;
-    }
+    final resp = await _dio.get<ResponseBody>(
+      url,
+      options: Options(
+        responseType: ResponseType.stream,
+        headers: headers,
+        followRedirects: true,
+        validateStatus: (c) => c != null && c >= 200 && c < 400,
+      ),
+      cancelToken: cancelToken,
+    );
 
     final isResumed = resp.statusCode == 206;
     if (existingBytes > 0 && !isResumed) {
-      // server ignored Range; start fresh to avoid corruption
       if (await partFile.exists()) await partFile.delete();
       existingBytes = 0;
     }
 
-    // length for this leg
     final lenHeader = resp.headers.value(Headers.contentLengthHeader);
     final legLength = int.tryParse(lenHeader ?? '') ?? -1;
     final expectedTotal = legLength > 0 ? existingBytes + legLength : -1;
 
-    // open .part for append
     await partFile.parent.create(recursive: true);
     final raf = await partFile.open(mode: FileMode.append);
 
     int receivedThisLeg = 0;
     try {
       await for (final chunk in resp.data!.stream) {
-        if (cancelToken?.isCancelled == true) {
-          // leave .part in place - treated as paused/canceled by caller
-          return;
-        }
+        if (cancelToken?.isCancelled == true) return;
         await raf.writeFrom(chunk);
         receivedThisLeg += chunk.length;
         if (onProgress != null && expectedTotal > 0) {
@@ -167,12 +141,10 @@ class DownloadedBooksManager {
       await raf.close();
     }
 
-    // success: rename .part -> final
     final finalFile = File(finalPath);
     if (await finalFile.exists()) await finalFile.delete();
     await partFile.rename(finalPath);
 
-    // index without re-reading bytes
     await _store.saveFromExistingFile(
       bookId: bookId,
       absolutePath: finalPath,
@@ -181,13 +153,10 @@ class DownloadedBooksManager {
       coverUrl: coverUrl,
     );
 
-    // Invalidate after indexing the file
     ref.invalidate(isBookDownloadedProvider(bookId));
-    ref.invalidate(downloadedListProvider);
     ref.invalidate(profileStatsProvider);
   }
 
-  // + NEW: Import an existing local file into the Library (copies + indexes).
   Future<DownloadEntry> importLocalFile({
     required String sourcePath,
     String? title,
@@ -199,7 +168,6 @@ class DownloadedBooksManager {
       throw Exception('File does not exist');
     }
 
-    // Only allow .pdf / .epub
     final lower = sourcePath.toLowerCase();
     late final String ext;
     if (lower.endsWith('.pdf')) {
@@ -210,21 +178,16 @@ class DownloadedBooksManager {
       throw Exception('Unsupported file type');
     }
 
-    // Stable local ID so progress/history can be added later.
     String _localIdFor(String path) =>
         'local:${base64Url.encode(utf8.encode(path))}';
-
     final bookId = _localIdFor(sourcePath);
 
-    // Decide title fallback from filename if not provided.
     title ??= p.basenameWithoutExtension(sourcePath);
     author ??= '-';
 
-    // Copy to our managed folder so the app owns the file lifetime.
     final destPath = await _store.targetPath(bookId, ext: ext);
     await f.copy(destPath);
 
-    // Index without re-reading bytes.
     final entry = await _store.saveFromExistingFile(
       bookId: bookId,
       absolutePath: destPath,
@@ -233,22 +196,93 @@ class DownloadedBooksManager {
       coverUrl: coverUrl,
     );
 
-    // Keep UI in sync.
     ref.invalidate(isBookDownloadedProvider(bookId));
-    ref.invalidate(downloadedListProvider);
     ref.invalidate(profileStatsProvider);
 
     return entry;
   }
 }
 
-/// Riverpod providers
-// final dioProvider = Provider<Dio>((ref) => Dio()); // Removed per patch
+//---
+
+extension TempFastRead on DownloadedBooksManager {
+  /// Downloads to a **CACHE temp file** (not indexed; not shown in Library).
+  /// Returns the absolute path. Supports resume via `.part`.
+  Future<String> downloadToTemp({
+    required String bookId,
+    required String url,
+    String ext = 'epub',
+    void Function(int received, int total)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    final docs = await getTemporaryDirectory(); // cache, not persisted
+    final safeId = bookId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+    final dir = Directory(p.join(docs.path, 'bookhub_cache'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+
+    final finalPath = p.join(dir.path, '$safeId.$ext');
+    final partPath = '$finalPath.part';
+    final partFile = File(partPath);
+    final finalFile = File(finalPath);
+
+    int existingBytes = 0;
+    if (await partFile.exists()) {
+      existingBytes = await partFile.length();
+    } else {
+      if (await finalFile.exists()) await finalFile.delete();
+    }
+
+    final headers = <String, dynamic>{};
+    if (existingBytes > 0) headers['Range'] = 'bytes=$existingBytes-';
+
+    final resp = await _dio.get<ResponseBody>(
+      url,
+      options: Options(
+        responseType: ResponseType.stream,
+        headers: headers,
+        followRedirects: true,
+        validateStatus: (c) => c != null && c >= 200 && c < 400,
+      ),
+      cancelToken: cancelToken,
+    );
+
+    final isResumed = resp.statusCode == 206;
+    if (existingBytes > 0 && !isResumed) {
+      if (await partFile.exists()) await partFile.delete();
+      existingBytes = 0;
+    }
+
+    final lenHeader = resp.headers.value(Headers.contentLengthHeader);
+    final legLength = int.tryParse(lenHeader ?? '') ?? -1;
+    final expectedTotal = legLength > 0 ? existingBytes + legLength : -1;
+
+    await partFile.parent.create(recursive: true);
+    final raf = await partFile.open(mode: FileMode.append);
+
+    int receivedThisLeg = 0;
+    try {
+      await for (final chunk in resp.data!.stream) {
+        if (cancelToken?.isCancelled == true) return finalPath; // exit early
+        await raf.writeFrom(chunk);
+        receivedThisLeg += chunk.length;
+        if (onProgress != null && expectedTotal > 0) {
+          onProgress(existingBytes + receivedThisLeg, expectedTotal);
+        }
+      }
+    } finally {
+      await raf.close();
+    }
+
+    if (await finalFile.exists()) await finalFile.delete();
+    await partFile.rename(finalPath);
+    return finalPath; // path to temp file
+  }
+}
+
+//---
 
 final downloadedBooksManagerProvider = Provider<DownloadedBooksManager>((ref) {
   final store = ref.watch(downloadedBooksStoreProvider);
-  // final dio = ref.watch(dioProvider); // Removed per patch
-  // return DownloadedBooksManager(ref, store, dio); // Removed per patch
-  final api = ref.watch(apiClientProvider); // Added per patch
-  return DownloadedBooksManager(ref, store, api.dio); // Added per patch
+  final api = ref.watch(apiClientProvider);
+  return DownloadedBooksManager(ref, store, api.dio);
 });

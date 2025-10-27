@@ -1,14 +1,14 @@
 import 'dart:async';
-import 'dart:io'; // ADDED: For file operations (temp file)
-import 'dart:typed_data'; // ADDED: For bytes data
-import 'package:dio/dio.dart'; // ADDED: For making online requests (authorized)
+import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p; // ADDED: For path joining
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 // backend
-import 'package:book_hub/backend/api_client.dart'; // ADDED: To get the Dio instance
+import 'package:book_hub/backend/api_client.dart';
 import 'package:book_hub/backend/backend_providers.dart';
 import 'package:book_hub/backend/book_repository.dart' show UiBook;
 import 'package:book_hub/backend/models/dtos.dart';
@@ -88,12 +88,8 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
         StringBuffer()
           ..writeln(b.title)
           ..writeln(l10n.byAuthor(b.author));
-    if ((desc.isNotEmpty)) {
-      sb.write('\n\n$desc');
-    }
-    if (link != null && link.isNotEmpty) {
-      sb.write('\n$link');
-    }
+    if ((desc.isNotEmpty)) sb.write('\n\n$desc');
+    if (link != null && link.isNotEmpty) sb.write('\n$link');
     return sb.toString();
   }
 
@@ -128,7 +124,6 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
       await api.dio.head(
         url,
         options: Options(
-          // very short timeouts; if it fails we silently ignore
           sendTimeout: const Duration(seconds: 5),
           receiveTimeout: const Duration(seconds: 5),
           method: 'HEAD',
@@ -137,7 +132,6 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
     } catch (_) {}
   }
 
-  // 1) REPLACED HELPER: Finds & normalizes the best download URL
   /// Returns an absolute URL for this book's primary file (epub/pdf),
   /// or null if the book has no downloadable file.
   String? _bestDownloadUrl(UiBook b) {
@@ -148,11 +142,10 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
       final u = (raw ?? '').trim();
       if (u.isEmpty) return null;
       if (u.startsWith('http://') || u.startsWith('https://')) return u;
-      // make absolute from baseUrl
-      return Uri.parse(base).resolve(u).toString();
+      return Uri.parse(base).resolve(u).toString(); // make absolute
     }
 
-    // --- DEBUG: log what the server gave us (1-2 lines per resource)
+    // DEBUG
     // ignore: avoid_print
     print(
       'Book ${b.id} resources: '
@@ -160,7 +153,7 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
       'ebookUrl=${b.ebookUrl}',
     );
 
-    // 1) Prefer EBOOK/DOCUMENT if contentUrl is usable
+    // 1) Prefer EBOOK/DOCUMENT
     final preferred = b.resources.where(
       (r) =>
           (r.type == ResourceType.EBOOK || r.type == ResourceType.DOCUMENT) &&
@@ -171,23 +164,23 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
       if (u != null) return u;
     }
 
-    // 2) Fallback: FIRST resource with any non-empty contentUrl
+    // 2) First non-empty contentUrl
     for (final r in b.resources) {
       final u = normalize(r.contentUrl);
       if (u != null) return u;
     }
 
-    // 3) Legacy field on UiBook
+    // 3) Legacy
     final u = normalize(b.ebookUrl);
     if (u != null) return u;
 
-    // Nothing we can use
     return null;
   }
-  // END REPLACED HELPER
 
-  // 👇 REPLACED HELPER: Stream from memory with spinner
-  Future<void> _openOnline(UiBook b) async {
+  // ===========================
+  // FAST "READ NOW" (temp cache)
+  // ===========================
+  Future<void> _openFastOnline(UiBook b) async {
     final l10n = AppLocalizations.of(context)!;
 
     final url = _bestDownloadUrl(b);
@@ -201,64 +194,176 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
 
     final api = ref.read(apiClientProvider);
     final dio = api.dio;
+    final cancel = CancelToken();
 
-    // lightweight spinner while we fetch the bytes
-    showDialog(
+    // Decide filename/ext up front (we update by content-type if needed)
+    var ext = _inferExt(b);
+    final tmpDir = await getTemporaryDirectory();
+    final safeId = b.id.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+    final cacheDir = Directory(p.join(tmpDir.path, 'bookhub_cache'));
+    if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
+    var finalPath = p.join(cacheDir.path, '$safeId.$ext');
+
+    // Progress bottom sheet
+    double pct = 0;
+    late void Function(void Function()) _setSheet;
+    showModalBottomSheet(
       context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+      isDismissible: false,
+      enableDrag: false,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (ctx, setS) {
+            _setSheet = setS;
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(l10n.readNow),
+                  const SizedBox(height: 12),
+                  LinearProgressIndicator(value: pct == 0 ? null : pct),
+                  const SizedBox(height: 8),
+                  Text(
+                    pct == 0
+                        ? 'Starting…'
+                        : '${(pct * 100).toStringAsFixed(0)}%',
+                  ),
+
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      cancel.cancel();
+                      Navigator.pop(ctx);
+                    },
+                    child: Text(l10n.cancel),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
 
     try {
-      // Stream into memory (no file write)
-      final resp = await dio.get<List<int>>(
+      // Stream download to temp file
+      final resp = await dio.get<ResponseBody>(
         url,
-        options: Options(responseType: ResponseType.bytes),
-      );
-
-      if (!mounted) return;
-      Navigator.of(context).pop(); // close spinner
-
-      final bytes = resp.data ?? const <int>[];
-      final theme = await ReaderPrefs.getThemeMode();
-      if (!mounted) return;
-
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder:
-              (_) => EpubReaderPage(
-                bookId: b.id,
-                bytesData: Uint8List.fromList(
-                  bytes,
-                ), // 👈 open LIVE from memory
-                theme: theme,
-                bookTitle: b.title,
-                author: b.author,
-                coverUrl: _coverFor(b),
-              ),
+        options: Options(
+          responseType: ResponseType.stream,
+          followRedirects: true,
+          validateStatus: (c) => c != null && c >= 200 && c < 400,
         ),
+        cancelToken: cancel,
       );
+
+      // Quick content-type check to correct extension if needed
+      final ct =
+          resp.headers.value(Headers.contentTypeHeader)?.toLowerCase() ?? '';
+      if (ct.contains('pdf') && ext != 'pdf') {
+        ext = 'pdf';
+        finalPath = p.join(cacheDir.path, '$safeId.$ext');
+      } else if (ct.contains('epub') && ext != 'epub') {
+        ext = 'epub';
+        finalPath = p.join(cacheDir.path, '$safeId.$ext');
+      }
+
+      final file = File('$finalPath.part');
+      if (await file.exists()) await file.delete();
+      final sink = file.openWrite();
+
+      // Progress calculation
+      final lenHeader = resp.headers.value(Headers.contentLengthHeader);
+      final total = int.tryParse(lenHeader ?? '') ?? -1;
+      var received = 0;
+
+      await for (final chunk in resp.data!.stream) {
+        if (cancel.isCancelled) break;
+        received += chunk.length;
+        sink.add(chunk);
+        if (total > 0) {
+          pct = received / total;
+          _setSheet(() {}); // refresh the bottom sheet
+        }
+      }
+
+      await sink.close();
+
+      // If cancelled, just bail (keep .part cleanup best-effort)
+      if (cancel.isCancelled) {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+        return;
+      }
+
+      // Rename .part -> final
+      final finalFile = File(finalPath);
+      if (await finalFile.exists()) await finalFile.delete();
+      await file.rename(finalPath);
+
+      if (!mounted) return;
+      Navigator.of(context).maybePop(); // close sheet
+
+      // Open by type (quick fix: auto-detect pdf vs epub)
+      if (ext == 'pdf' || finalPath.toLowerCase().endsWith('.pdf')) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder:
+                (_) => PdfReaderPage(
+                  src: rm.ReaderSource(
+                    bookId: b.id,
+                    title: b.title,
+                    path: finalPath,
+                    format: rm.ReaderFormat.pdf,
+                  ),
+                ),
+          ),
+        );
+      } else {
+        final theme = await ReaderPrefs.getThemeMode();
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder:
+                (_) => EpubReaderPage(
+                  bookId: b.id,
+                  filePath: finalPath,
+                  theme: theme,
+                  bookTitle: b.title,
+                  author: b.author,
+                  coverUrl: _coverFor(b),
+                  showProgressUI: false, // 👈 hide progress here
+                ),
+          ),
+        );
+      }
+
+      // Auto-delete temp file after closing reader
+      try {
+        final f = File(finalPath);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
     } catch (e) {
       if (!mounted) return;
-      Navigator.of(context).maybePop(); // ensure spinner is closed
+      Navigator.of(context).maybePop(); // close sheet if still open
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('${l10n.failedToLoadBook}: $e')));
     }
   }
-  // 👆 END REPLACED HELPER
+  // ===== END fast cache "Read now" =====
 
   Future<void> _openDownloaded(UiBook b) async {
-    // capture l10n early (used below, including after awaits)
     final l10n = AppLocalizations.of(context)!;
-
     final store = ref.read(downloadedBooksStoreProvider);
     final entry = await store.getByBookId(b.id);
     if (!mounted) return;
 
     if (entry == null) {
-      // If not downloaded, open online
-      await _openOnline(b);
+      // Not downloaded -> use fast online
+      await _openFastOnline(b);
       return;
     }
 
@@ -268,7 +373,7 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
     if (lower.endsWith('.epub')) {
       final theme = await ReaderPrefs.getThemeMode();
       if (!mounted) return;
-      final navigator = Navigator.of(context); // capture
+      final navigator = Navigator.of(context);
       navigator.push(
         MaterialPageRoute(
           builder:
@@ -279,12 +384,13 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
                 bookTitle: b.title,
                 author: b.author,
                 coverUrl: _coverFor(b),
+                showProgressUI: false, // 👈 hide here too (if you want)
               ),
         ),
       );
     } else if (lower.endsWith('.pdf')) {
       if (!mounted) return;
-      final navigator = Navigator.of(context); // capture
+      final navigator = Navigator.of(context);
       navigator.push(
         MaterialPageRoute(
           builder:
@@ -299,23 +405,20 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
         ),
       );
     } else {
-      // Unknown format - prompt a re-download with inferred ext
       await _queueDownload(l10n, b);
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context); // capture
+      final messenger = ScaffoldMessenger.of(context);
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.downloadUrlNotAvailable)),
       );
     }
   }
 
-  // 👇 MODIFIED HELPER: Queues a download
   Future<void> _queueDownload(AppLocalizations l10n, UiBook b) async {
-    // Use new helper to resolve a URL
     final url = _bestDownloadUrl(b);
     if (url == null) {
       if (!mounted) return;
-      final messenger = ScaffoldMessenger.of(context); // capture
+      final messenger = ScaffoldMessenger.of(context);
       messenger.showSnackBar(
         SnackBar(content: Text(l10n.downloadUrlNotAvailable)),
       );
@@ -336,10 +439,9 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
 
     ref.invalidate(profileStatsProvider);
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context); // capture
+    final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(SnackBar(content: Text(l10n.addedToDownloads)));
   }
-  // 👆 END MODIFIED HELPER
 
   Future<void> _removeDownload(
     AppLocalizations l10n,
@@ -350,25 +452,19 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
     ref.invalidate(isBookDownloadedProvider(bookId));
     ref.invalidate(profileStatsProvider);
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context); // capture
+    final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(
       SnackBar(content: Text(l10n.bookRemovedFromDevice(titleForToast))),
     );
   }
 
-  // ✅ PATCHED: _toggleSave to use provider state for toast and rely on provider for UI refresh
   Future<void> _toggleSave(
     AppLocalizations l10n,
     String bookId,
     String titleForToast,
   ) async {
-    // Read the current state BEFORE toggling for the toast message
-    // Read the bool directly (NO .value) as isBookSavedProvider(bookId) returns bool.
     final wasSaved = ref.read(isBookSavedProvider(bookId)); // bool
-
     await ref.read(savedBooksManagerProvider).toggle(bookId);
-
-    // Invalidate to trigger the provider to refetch and rebuild the icon immediately
     ref.invalidate(isBookSavedProvider(bookId));
     ref.invalidate(profileStatsProvider);
 
@@ -382,9 +478,7 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
         ),
       ),
     );
-    // No extra reads needed; provider will rebuild and fill/unfill the icon
   }
-  // 👆 END PATCHED: _toggleSave
 
   @override
   Widget build(BuildContext context) {
@@ -408,13 +502,10 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
         Future.microtask(() => _prewarmPrimaryUrl(b));
 
         final cover = _coverFor(b);
-        // Note: isSaved is no longer used for the icon here, only for potential non-Consumer widgets.
-        // The icon uses the Consumer widget below.
         final isDownloadedAsync = ref.watch(isBookDownloadedProvider(b.id));
         final auth = ref.watch(authProvider);
         final isAdmin = (auth.role == 'ADMIN');
 
-        // Prefer the first ebook resource for "share" if present.
         String? _shareLink() {
           final ebookRes = b.resources.where(
             (r) =>
@@ -429,13 +520,9 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
             title: Text(b.title, style: const TextStyle(fontSize: 16)),
             backgroundColor: Colors.green,
             actions: [
-              // ✅ FIX: Replaced existing Consumer logic to watch the bool directly
               Consumer(
                 builder: (context, ref, _) {
-                  final isSaved = ref.watch(
-                    isBookSavedProvider(b.id),
-                  ); // <-- bool (NO .value)
-
+                  final isSaved = ref.watch(isBookSavedProvider(b.id));
                   return IconButton(
                     tooltip:
                         isSaved
@@ -451,8 +538,6 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
                   );
                 },
               ),
-
-              // 👆 END FIX: Bookmark Icon
               IconButton(
                 icon: const Icon(Icons.share, color: Colors.white),
                 onPressed: () {
@@ -537,8 +622,6 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
                   Wrap(
                     spacing: 8,
                     children: [
-                      // We only have IDs here. If you later have a category cache,
-                      // resolve names and show them instead.
                       Chip(
                         label: Text('#${b.categoryIds.first}'),
                         backgroundColor: Colors.green.shade50,
@@ -548,7 +631,6 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
 
                 const SizedBox(height: 20),
 
-                // INSERTED: Reusable hint card (2/3)
                 const SizedBox(height: 12),
                 const HintCard(
                   title: 'Tip',
@@ -561,17 +643,10 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
                   children: [
                     Expanded(
                       child: ElevatedButton(
-                        //
-                        // ===== 🚀 MODIFICATION HERE: Read now opens live (1/3) =====
-                        //
+                        // Use FAST online open (temp cached, progress)
                         onPressed: () async {
-                          await _openOnline(
-                            b,
-                          ); // open live regardless of download state
+                          await _openFastOnline(b);
                         },
-                        //
-                        // ===== 🚀 END MODIFICATION =====
-                        //
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -659,9 +734,9 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
                           title: Text(_chapters[i]),
                           trailing: const Icon(Icons.chevron_right),
                           onTap: () async {
-                            await _openOnline(
+                            await _openFastOnline(
                               b,
-                            ); // open live from chapter tap too
+                            ); // chapter also uses fast online
                           },
                         ),
                       ),
@@ -715,7 +790,6 @@ class _AppBarTitle extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-// INSERTED: Reusable hint card (3/3)
 class HintCard extends StatelessWidget {
   final String title;
   final String message;
@@ -732,7 +806,7 @@ class HintCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       elevation: 0,
-      color: const Color(0xFFEFF7EE), // soft green
+      color: const Color(0xFFEFF7EE),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -755,9 +829,8 @@ class HintCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     message,
-                    // If you're on Flutter stable without Color.withValues, switch to withOpacity(0.85)
                     style: TextStyle(
-                      color: Colors.green.shade900.withValues(alpha: 0.85),
+                      color: Colors.green.shade900.withOpacity(0.85),
                       height: 1.4,
                     ),
                   ),

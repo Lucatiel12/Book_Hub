@@ -1,15 +1,18 @@
-// lib/pages/admin/submit_book_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class SubmitBookPage extends StatefulWidget {
+import 'package:book_hub/features/requests/user_requests_repository.dart';
+import 'package:book_hub/features/requests/user_requests_models.dart';
+
+class SubmitBookPage extends ConsumerStatefulWidget {
   const SubmitBookPage({super.key});
 
   @override
-  State<SubmitBookPage> createState() => _SubmitBookPageState();
+  ConsumerState<SubmitBookPage> createState() => _SubmitBookPageState();
 }
 
-class _SubmitBookPageState extends State<SubmitBookPage> {
+class _SubmitBookPageState extends ConsumerState<SubmitBookPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _titleController = TextEditingController();
@@ -19,9 +22,9 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
   final _linkController = TextEditingController();
   String? _selectedCategory;
 
-  // Note: In a real app, these category names would be fetched
-  // from a backend and would have associated translation keys.
-  final List<String> categories = [
+  bool _submitting = false;
+
+  final List<String> categories = const [
     "Literature",
     "Science",
     "History",
@@ -44,14 +47,60 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
     super.dispose();
   }
 
-  void _submitForm() {
+  Future<void> _submitForm() async {
     final l10n = AppLocalizations.of(context)!;
-    if (_formKey.currentState!.validate()) {
-      final title = _titleController.text;
+    if (!_formKey.currentState!.validate()) return;
+
+    // Fold category + link into description so admin sees everything
+    final baseDesc = _descriptionController.text.trim();
+    final catLine =
+        _selectedCategory == null ? '' : '\nCategory: $_selectedCategory';
+    final linkLine =
+        _linkController.text.trim().isEmpty
+            ? ''
+            : '\nLink: ${_linkController.text.trim()}';
+    final combinedDescription = [
+      baseDesc,
+      catLine,
+      linkLine,
+    ].where((s) => s.isNotEmpty).join('\n');
+
+    final dto = BookLookupRequestDto(
+      // Changed to BookLookupRequestDto
+      title: _titleController.text.trim(),
+      // Author is optional for lookup (nullable on DTO)
+      author:
+          _authorController.text.trim().isEmpty
+              ? null
+              : _authorController.text.trim(),
+      description:
+          combinedDescription.isEmpty
+              ? null
+              : combinedDescription, // Use combinedDescription
+      isbn:
+          _isbnController.text.trim().isEmpty
+              ? null
+              : _isbnController.text.trim(),
+      // Note: BookLookupRequestDto does not have categoryIds or bookUrl fields
+    );
+
+    setState(() => _submitting = true);
+    try {
+      // Call the lookup method
+      await ref.read(userRequestsRepositoryProvider).lookup(dto);
+
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.bookSubmittedSuccessfully(title))),
+        SnackBar(content: Text(l10n.bookSubmittedSuccessfully(dto.title))),
       );
       Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to send: $e')));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -110,7 +159,10 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
               label: l10n.bookTitle,
               hint: l10n.enterBookTitleHint,
               validator:
-                  (value) => value!.isEmpty ? l10n.pleaseEnterTitle : null,
+                  (v) =>
+                      (v == null || v.trim().isEmpty)
+                          ? l10n.pleaseEnterTitle
+                          : null,
             ),
             const SizedBox(height: 16),
             _buildTextField(
@@ -119,7 +171,10 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
               label: l10n.author,
               hint: l10n.enterAuthorNameHint,
               validator:
-                  (value) => value!.isEmpty ? l10n.pleaseEnterAuthor : null,
+                  (v) =>
+                      (v == null || v.trim().isEmpty)
+                          ? l10n.pleaseEnterAuthor
+                          : null,
             ),
             const SizedBox(height: 16),
             _buildTextField(
@@ -147,15 +202,18 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
               label: l10n.pdfEpubLink,
               hint: "https://example.com/book.pdf",
               validator:
-                  (value) => value!.isEmpty ? l10n.pleaseEnterLink : null,
+                  (v) =>
+                      (v == null || v.trim().isEmpty)
+                          ? l10n.pleaseEnterLink
+                          : null,
             ),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                icon: const Icon(Icons.upload_file_outlined),
-                label: Text(l10n.createBook),
-                onPressed: _submitForm,
+                icon: const Icon(Icons.send),
+                label: Text(_submitting ? 'Sending…' : 'Submit Book to Admin'),
+                onPressed: _submitting ? null : _submitForm,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF4CAF50),
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -225,7 +283,7 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
               categories
                   .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                   .toList(),
-          onChanged: (value) => setState(() => _selectedCategory = value),
+          onChanged: (v) => setState(() => _selectedCategory = v),
           decoration: InputDecoration(
             hintText: l10n.selectCategoryHint,
             contentPadding: const EdgeInsets.symmetric(
@@ -241,8 +299,7 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
               borderSide: BorderSide(color: Colors.grey.shade300),
             ),
           ),
-          validator:
-              (value) => value == null ? l10n.pleaseSelectCategory : null,
+          validator: (v) => v == null ? l10n.pleaseSelectCategory : null,
         ),
       ],
     );
@@ -263,7 +320,7 @@ class _SubmitBookPageState extends State<SubmitBookPage> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              l10n.submissionGuidelinesNote,
+              'Please ensure your link is valid and follows the guidelines.',
               style: TextStyle(color: Colors.grey.shade700, height: 1.4),
             ),
           ),

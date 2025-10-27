@@ -6,17 +6,9 @@ import 'package:file_picker/file_picker.dart';
 import 'book_details_page.dart';
 import 'package:book_hub/features/downloads/download_badge.dart';
 
-// Riverpod providers / managers
 import 'package:book_hub/features/books/providers/saved_downloaded_providers.dart';
-import 'package:book_hub/managers/downloaded_books_manager.dart';
-import 'package:book_hub/services/storage/downloaded_books_store.dart';
-
-// Reader
 import 'package:book_hub/reader/open_reader.dart';
 import 'package:book_hub/reader/reader_models.dart';
-
-import 'package:book_hub/features/profile/profile_stats_provider.dart';
-import 'package:book_hub/features/downloads/download_controller.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
   const LibraryPage({super.key});
@@ -27,7 +19,7 @@ class LibraryPage extends ConsumerStatefulWidget {
 
 class _LibraryPageState extends ConsumerState<LibraryPage> {
   Future<void> _refresh() async {
-    ref.invalidate(downloadedListProvider);
+    await ref.read(downloadedListProvider.notifier).refreshList();
   }
 
   Future<void> _importFromDevice() async {
@@ -50,16 +42,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         return;
       }
 
-      // Import (copy + index) then open from our managed location.
-      final mgr = ref.read(downloadedBooksManagerProvider);
-      final entry = await mgr.importLocalFile(sourcePath: path);
-
-      // Refresh list (manager already invalidates, but this is harmless).
-      ref.invalidate(downloadedListProvider);
-      ref.invalidate(profileStatsProvider);
+      // Import via notifier (adds to list optimistically)
+      final entry = await ref
+          .read(downloadedListProvider.notifier)
+          .importLocal(sourcePath: path);
 
       if (!mounted) return;
-      // Open immediately (fully offline).
+
       final isEpub = entry.path.toLowerCase().endsWith('.epub');
       await ReaderOpener.open(
         context,
@@ -78,7 +67,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         ),
       );
 
-      // Friendly toast
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(l10n.addedToDownloads)));
@@ -129,7 +117,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
               padding: const EdgeInsets.all(16),
               itemCount: items.length,
               itemBuilder: (context, index) {
-                final DownloadEntry e = items[index];
+                final e = items[index];
                 final title =
                     (e.title ?? '').trim().isEmpty ? l10n.untitled : e.title!;
                 final author =
@@ -138,8 +126,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                         : e.author!;
                 final cover = e.coverUrl ?? '';
 
-                // If your model uses a different field than `bytes`, change here:
-                final bytes = (e.bytes);
+                final bytes = e.bytes;
                 final sizeMb = (bytes / (1024 * 1024)).toStringAsFixed(1);
 
                 return Card(
@@ -183,7 +170,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                     trailing: Consumer(
                       builder: (context, ref, _) {
                         final deleting = ValueNotifier<bool>(false);
-
                         return ValueListenableBuilder<bool>(
                           valueListenable: deleting,
                           builder: (context, isDeleting, __) {
@@ -207,32 +193,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                                       : () async {
                                         deleting.value = true;
                                         try {
-                                          // 1) Delete from disk + DB (await it)
                                           await ref
                                               .read(
-                                                downloadedBooksManagerProvider,
+                                                downloadedListProvider.notifier,
                                               )
-                                              .delete(e.bookId);
-
-                                          // 2) Clear any active/failed download state for this book so
-                                          //    the "Failed" badge disappears as well.
-                                          ref
-                                              .read(
-                                                downloadControllerProvider
-                                                    .notifier,
-                                              )
-                                              .clearFor(e.bookId);
-
-                                          // 3) Force the list to refresh and *await* the new data
-                                          ref.invalidate(
-                                            downloadedListProvider,
-                                          );
-                                          await ref.read(
-                                            downloadedListProvider.future,
-                                          );
-
-                                          // 4) Update stats
-                                          ref.invalidate(profileStatsProvider);
+                                              .remove(e.bookId);
 
                                           if (!mounted) return;
                                           ScaffoldMessenger.of(
@@ -269,13 +234,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
                       },
                     ),
                     onTap: () async {
-                      final path = e.path; // absolute local file path
+                      final path = e.path;
                       final isEpub = path.toLowerCase().endsWith('.epub');
 
                       final src = ReaderSource(
-                        bookId: e.bookId, // backend ID (or local id)
-                        title: title, // REQUIRED in your model
-                        author: author, // optional in your model
+                        bookId: e.bookId,
+                        title: title,
+                        author: author,
                         path: path,
                         format: isEpub ? ReaderFormat.epub : ReaderFormat.pdf,
                       );
@@ -298,7 +263,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _importFromDevice, // ⬅️ no context argument needed
+        onPressed: _importFromDevice,
         tooltip: AppLocalizations.of(context)!.importFromDevice,
         child: const Icon(Icons.add),
       ),

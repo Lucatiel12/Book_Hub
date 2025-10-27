@@ -26,8 +26,8 @@ import 'pages/category_books_page.dart' as catpg;
 import 'pages/book_details_page.dart' as bookpg;
 
 // ---- User quick actions
-import 'features/requests/request_book_page.dart';
-import 'features/requests/submit_book_page.dart';
+import 'features/requests/user_request_book_page.dart';
+import 'features/requests/user_submit_book_page.dart';
 
 // ---- Admin
 import 'features/admin/admin_submit_book_page.dart';

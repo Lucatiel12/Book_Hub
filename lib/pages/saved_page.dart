@@ -1,4 +1,3 @@
-// lib/pages/saved_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +11,7 @@ import 'package:book_hub/managers/saved_books_manager.dart';
 import 'package:book_hub/backend/backend_providers.dart';
 import 'package:book_hub/backend/book_repository.dart' show UiBook;
 
-/// Fetch a single book by id (scoped to this file for convenience)
+/// --- Book details (unchanged) ---
 final savedBookByIdProvider = FutureProvider.family<UiBook, String>((
   ref,
   id,
@@ -20,6 +19,43 @@ final savedBookByIdProvider = FutureProvider.family<UiBook, String>((
   final repo = ref.watch(bookRepositoryProvider);
   return repo.getById(id);
 });
+
+/// --- NEW: reactive Saved IDs using a Notifier (optimistic updates) ---
+class SavedIdsNotifier extends Notifier<List<String>> {
+  SavedBooksManager get _mgr => ref.read(savedBooksManagerProvider);
+
+  @override
+  List<String> build() {
+    final ids = _mgr.current().toList()..sort();
+    return ids;
+  }
+
+  /// Optimistic remove: update UI instantly, then persist; rollback if it fails.
+  Future<void> remove(String id) async {
+    final prev = state;
+    if (!prev.contains(id)) return;
+
+    // optimistic UI
+    state = prev.where((e) => e != id).toList();
+
+    try {
+      await _mgr.unsave(id);
+    } catch (_) {
+      // rollback on failure
+      state = prev;
+      rethrow;
+    }
+  }
+
+  /// Pull-to-refresh or local resync
+  void refreshNow() {
+    state = _mgr.current().toList()..sort();
+  }
+}
+
+final savedIdsProvider = NotifierProvider<SavedIdsNotifier, List<String>>(
+  () => SavedIdsNotifier(),
+);
 
 class SavedPage extends ConsumerStatefulWidget {
   const SavedPage({super.key});
@@ -30,16 +66,13 @@ class SavedPage extends ConsumerStatefulWidget {
 
 class _SavedPageState extends ConsumerState<SavedPage> {
   Future<void> _refresh() async {
-    // Saved set is local; just rebuild UI
-    setState(() {});
+    ref.read(savedIdsProvider.notifier).refreshNow();
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final savedMgr = ref.watch(savedBooksManagerProvider);
-    // Treat saved entries as real backend IDs
-    final ids = savedMgr.current().toList()..sort();
+    final ids = ref.watch(savedIdsProvider);
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.saved), backgroundColor: Colors.green),
@@ -67,12 +100,20 @@ class _SavedPageState extends ConsumerState<SavedPage> {
                     return _SavedTile(
                       bookId: id,
                       onRemove: () async {
-                        await savedMgr.unsave(id);
-                        if (!context.mounted) return;
-                        setState(() {});
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(l10n.removedFromSaved)),
-                        );
+                        try {
+                          await ref.read(savedIdsProvider.notifier).remove(id);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(l10n.removedFromSaved)),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(l10n.errorGeneric(e.toString())),
+                            ),
+                          );
+                        }
                       },
                     );
                   },
@@ -84,7 +125,7 @@ class _SavedPageState extends ConsumerState<SavedPage> {
 
 class _SavedTile extends ConsumerWidget {
   final String bookId;
-  final VoidCallback onRemove;
+  final Future<void> Function() onRemove;
 
   const _SavedTile({required this.bookId, required this.onRemove});
 
@@ -179,7 +220,7 @@ class _LoadingTile extends StatelessWidget {
 
 class _ErrorTile extends StatelessWidget {
   final String bookId;
-  final VoidCallback onRemove;
+  final Future<void> Function() onRemove;
   const _ErrorTile({required this.bookId, required this.onRemove});
 
   @override
@@ -200,7 +241,6 @@ class _ErrorTile extends StatelessWidget {
           onPressed: onRemove,
         ),
         onTap: () {
-          // still allow navigate; details page will fetch
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => BookDetailsPage(bookId: bookId)),

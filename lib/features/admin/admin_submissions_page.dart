@@ -6,9 +6,6 @@ class AdminSubmissionsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const RequestsPage(
-      fixedType: 'CONTRIBUTION', // show only user contributions (submit book)
-      // fixedStatus: 'PENDING',
-    );
+    return const RequestsPage(fixedType: 'LOOKUP');
   }
 }
