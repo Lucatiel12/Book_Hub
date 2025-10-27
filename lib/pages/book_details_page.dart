@@ -1,3 +1,5 @@
+// ignore_for_file: no_leading_underscores_for_local_identifiers
+
 import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
@@ -355,6 +357,7 @@ class _BookDetailsPageState extends ConsumerState<BookDetailsPage> {
   }
   // ===== END fast cache "Read now" =====
 
+  // ignore: unused_element
   Future<void> _openDownloaded(UiBook b) async {
     final l10n = AppLocalizations.of(context)!;
     final store = ref.read(downloadedBooksStoreProvider);
@@ -830,7 +833,7 @@ class HintCard extends StatelessWidget {
                   Text(
                     message,
                     style: TextStyle(
-                      color: Colors.green.shade900.withOpacity(0.85),
+                      color: Colors.green.shade900.withValues(alpha: 0.85),
                       height: 1.4,
                     ),
                   ),

@@ -10,17 +10,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../backend/book_repository.dart' show UiBook;
 import '../features/profile/profile_page.dart';
-import '../utils/error_text.dart'; // Add import for friendlyError
-import '../widgets/friendly_error.dart'; // Add import for FriendlyError
+import '../utils/error_text.dart';
+import '../widgets/friendly_error.dart';
 import '../widgets/offline_banner.dart';
 import 'book_details_page.dart';
 import 'library_page.dart';
 import 'saved_page.dart';
 import 'search_page.dart';
 
-// 🔗 reading data (history/progress) – use your repo & models
+// 🔗 reading data (history/progress)
 import 'package:book_hub/features/reading/reading_models.dart' as rm;
 import 'package:book_hub/features/reading/reading_providers.dart';
+
+// ✅ use StateNotifier-based history (with clearAll/refresh)
+import 'package:book_hub/features/history/history_provider.dart';
 
 // Colors
 const Color _primaryGreen = Color(0xFF4CAF50);
@@ -106,36 +109,29 @@ final featuredOnlyBooksProvider = FutureProvider.autoDispose<List<UiBook>>((
   return all.where((b) => b.categoryIds.contains(featuredId)).toList();
 });
 
-/// Recent reading history (first 10) — uses your ReadingRepository
-final readingHistoryProvider =
-    FutureProvider.autoDispose<List<rm.ReadingHistoryItem>>((ref) async {
-      final repo = ref.read(readingRepositoryProvider);
-      final page = await repo.getHistory(
-        page: 0,
-        size: 10,
-        sort: 'lastOpenedAt,desc',
-      );
-      return page.content;
-    });
-
 /// Continue Reading = history items with progress in (0,1)
 final continueReadingProvider = FutureProvider.autoDispose<
   List<(rm.ReadingHistoryItem, rm.ReadingProgressDto)>
 >((ref) async {
   final repo = ref.read(readingRepositoryProvider);
-  final history = await ref.watch(readingHistoryProvider.future);
+
+  // Read the current history list from the StateNotifier provider
+  final histAsync = ref.watch(readingHistoryProvider);
+  final history = histAsync.value ?? const <rm.ReadingHistoryItem>[];
+
+  if (history.isEmpty) return const [];
 
   // Limit how many progress calls we fire
   final head = history.take(10).toList();
 
-  // 2.a Patch: make per-book progress fetch non-fatal
+  // Per-book progress fetch (non-fatal)
   final pairs = await Future.wait(
     head.map((h) async {
       try {
-        final p = await repo.getProgress(h.bookId); // may throw 500
+        final p = await repo.getProgress(h.bookId);
         return (h, p);
       } catch (_) {
-        return (h, null); // 👈 swallow per-item failures
+        return (h, null);
       }
     }),
   );
@@ -150,7 +146,7 @@ final continueReadingProvider = FutureProvider.autoDispose<
           )
           .toList();
 
-  // Sort by lastOpenedAt desc (defensive; history already sorted)
+  // Sort by lastOpenedAt desc (defensive)
   filtered.sort((a, b) {
     final da = a.$1.lastOpenedAt;
     final db = b.$1.lastOpenedAt;
@@ -235,7 +231,7 @@ class _HomePageState extends State<HomePage> {
             );
           },
         );
-      case 3: // Library tab -> no FAB here; LibraryPage can have its own
+      case 3:
         return null;
       default:
         return null;
@@ -309,9 +305,7 @@ class _HomePageState extends State<HomePage> {
           BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
         ],
       ),
-      // 2.b Patch: Replace the global FAB with the tab-aware helper
-      floatingActionButton:
-          _fabForTab(), // 👈 instead of a global FAB for all tabs
+      floatingActionButton: _fabForTab(),
     );
   }
 
@@ -343,7 +337,10 @@ class _HomeContent extends ConsumerWidget {
         // Invalidate and refetch
         ref.invalidate(categoriesProvider);
         ref.invalidate(featuredOnlyBooksProvider);
-        ref.invalidate(readingHistoryProvider);
+
+        // ✅ refresh via StateNotifier (not invalidate)
+        await ref.read(readingHistoryProvider.notifier).refresh();
+
         ref.invalidate(continueReadingProvider);
 
         try {
@@ -366,10 +363,8 @@ class _HomeContent extends ConsumerWidget {
                         height: 200,
                         child: Center(child: CircularProgressIndicator()),
                       ),
-                  // 2.a Patch: Replace error text with invisible widget
                   error: (e, _) {
-                    // debugPrint('continueReadingProvider error: $e');
-                    return const SizedBox.shrink(); // 👈 no big error text
+                    return const SizedBox.shrink();
                   },
                   data: (items) {
                     if (items.isEmpty) return const SizedBox.shrink();
@@ -488,10 +483,12 @@ class _HomeContent extends ConsumerWidget {
               },
             ),
 
-            // ▶ Reading History (recently opened)
+            // ▶ Reading History (recently opened) + CLEAR button
             Consumer(
               builder: (context, ref, _) {
-                final hist = ref.watch(readingHistoryProvider);
+                final hist = ref.watch(
+                  readingHistoryProvider,
+                ); // StateNotifier<AsyncValue<List<...>>>
                 return hist.when(
                   loading:
                       () => const SizedBox(
@@ -503,7 +500,11 @@ class _HomeContent extends ConsumerWidget {
                         padding: const EdgeInsets.only(bottom: 16),
                         child: FriendlyError(
                           message: friendlyError(e),
-                          onRetry: () => ref.invalidate(readingHistoryProvider),
+                          onRetry:
+                              () =>
+                                  ref
+                                      .read(readingHistoryProvider.notifier)
+                                      .refresh(),
                         ),
                       ),
                   data: (items) {
@@ -516,12 +517,69 @@ class _HomeContent extends ConsumerWidget {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          "Reading History",
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
+                        // Header with Clear action
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "Reading History",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                            TextButton.icon(
+                              style: TextButton.styleFrom(
+                                foregroundColor: Colors.redAccent,
+                              ),
+                              onPressed: () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder:
+                                      (_) => AlertDialog(
+                                        title: const Text('Clear history?'),
+                                        content: const Text(
+                                          'This will remove the local reading history on this device.',
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed:
+                                                () => Navigator.pop(
+                                                  context,
+                                                  false,
+                                                ),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          FilledButton(
+                                            onPressed:
+                                                () => Navigator.pop(
+                                                  context,
+                                                  true,
+                                                ),
+                                            child: const Text('Clear'),
+                                          ),
+                                        ],
+                                      ),
+                                );
+                                if (confirmed == true) {
+                                  await ref
+                                      .read(readingHistoryProvider.notifier)
+                                      .clearAll();
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Reading history cleared',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.delete_outline),
+                              label: const Text('Clear'),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 10),
                         SizedBox(
@@ -792,6 +850,7 @@ class _HomeContent extends ConsumerWidget {
 // ----------------------------
 // 🔹 Reusable widgets
 // ----------------------------
+// ignore: unused_element
 class _StatCard extends StatelessWidget {
   final String label;
   final String value;
@@ -809,14 +868,14 @@ class _StatCard extends StatelessWidget {
       children: [
         CircleAvatar(
           radius: 22,
-          backgroundColor: _primaryGreen.withOpacity(0.1),
+          backgroundColor: _primaryGreen.withValues(alpha: 0.1),
           child: Icon(icon, color: _primaryGreen),
         ),
         const SizedBox(height: 5),
         Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: Colors.black54),
+        const Text(
+          'Total',
+          style: TextStyle(fontSize: 12, color: Colors.black54),
         ),
       ],
     );
@@ -845,7 +904,7 @@ class _CategoryTile extends StatelessWidget {
       color: Colors.white,
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: _primaryGreen.withOpacity(0.1),
+          backgroundColor: _primaryGreen.withValues(alpha: 0.1),
           child: Icon(icon, color: _primaryGreen),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),

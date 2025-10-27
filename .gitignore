@@ -1,45 +1,81 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# -------------------------
+# 🔹 Flutter & Dart
+# -------------------------
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
+.packages
 .pub-cache/
 .pub/
-/build/
+build/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+generated_plugin_registrant.dart
 
-# Symbolication related
+# -------------------------
+# 🔹 IDEs & Editors
+# -------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.atom/
+.history/
+.svn/
+.DS_Store
+*.swp
+*.log
+*.class
+*.pyc
+
+# -------------------------
+# 🔹 OS & Misc
+# -------------------------
+Thumbs.db
+*.bak
+*.tmp
+*.old
+migrate_working_dir/
+buildlog/
+.swiftpm/
+
+# -------------------------
+# 🔹 Symbolication / Obfuscation
+# -------------------------
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# -------------------------
+# 🔹 Android build outputs
+# -------------------------
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# -------------------------
+# 🔹 🔐 Sensitive signing files (VERY IMPORTANT)
+# -------------------------
+# Keystore and signing keys — DO NOT commit!
+android/key.properties
+android/*.keystore
+android/**/*.keystore
+*.jks
+
+# -------------------------
+# 🔹 iOS / macOS generated
+# -------------------------
+ios/Flutter/Flutter.framework/
+ios/Flutter/Flutter.podspec
+ios/.symlinks/
+ios/Pods/
+ios/Runner/GeneratedPluginRegistrant.*
+macos/Flutter/ephemeral/
+macos/Pods/
+macos/.symlinks/
+
+# -------------------------
+# 🔹 Windows & Linux
+# -------------------------
+windows/flutter/ephemeral/
+linux/flutter/ephemeral/

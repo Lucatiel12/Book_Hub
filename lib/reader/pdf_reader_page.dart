@@ -138,8 +138,9 @@ class _PdfReaderPageState extends ConsumerState<PdfReaderPage> {
                 validator: (v) {
                   final n = int.tryParse((v ?? '').trim());
                   if (n == null) return 'Enter a number';
-                  if (n < 1 || n > _totalPages!)
+                  if (n < 1 || n > _totalPages!) {
                     return 'Must be 1–${_totalPages!}';
+                  }
                   return null;
                 },
                 onFieldSubmitted: (_) {
@@ -251,7 +252,7 @@ class _PdfReaderPageState extends ConsumerState<PdfReaderPage> {
                   top: BorderSide(
                     color: Theme.of(
                       context,
-                    ).colorScheme.outlineVariant.withOpacity(.4),
+                    ).colorScheme.outlineVariant.withValues(alpha: .4),
                   ),
                 ),
               ),

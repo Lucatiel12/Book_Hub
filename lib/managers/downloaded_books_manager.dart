@@ -178,6 +178,7 @@ class DownloadedBooksManager {
       throw Exception('Unsupported file type');
     }
 
+    // ignore: no_leading_underscores_for_local_identifiers
     String _localIdFor(String path) =>
         'local:${base64Url.encode(utf8.encode(path))}';
     final bookId = _localIdFor(sourcePath);

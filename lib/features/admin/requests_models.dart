@@ -1,5 +1,7 @@
 // lib/features/admin/requests_models.dart
 
+// ignore_for_file: constant_identifier_names
+
 /// Matches Swagger enums:
 /// requestType: "CONTRIBUTION" | "LOOKUP"
 /// status: "PENDING" | "APPROVED" | "REJECTED"

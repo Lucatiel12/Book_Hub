@@ -1,49 +1,13 @@
+// lib/pages/category_books_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:book_hub/backend/api_client.dart';
-import 'package:book_hub/backend/models/dtos.dart' show ResourceType;
-import 'package:book_hub/backend/book_repository.dart' show UiBook;
+
+// ✅ use the shared provider you created
+import 'package:book_hub/features/books/providers/category_books_provider.dart';
+
 import 'book_details_page.dart';
 
 const Color _lightGreenBackground = Color(0xFFF0FDF0);
-
-/// Provider to fetch books by categoryId
-final categoryBooksProvider = FutureProvider.family<List<UiBook>, String>((
-  ref,
-  categoryId,
-) async {
-  ref.keepAlive();
-
-  final api = ref.read(apiClientProvider);
-  final page = await api.getBooks(page: 0, size: 20, categoryId: categoryId);
-
-  // Map DTOs to UiBook
-  return page.content
-      .map((b) {
-        String? ebookUrl;
-        // Assuming b.bookFiles is non-nullable list based on DTO definition.
-        // If it can be null, use: final files = b.bookFiles ?? const [];
-        final files = b.bookFiles;
-        for (final r in files) {
-          if (r.type == ResourceType.EBOOK) {
-            ebookUrl = r.contentUrl;
-            break;
-          }
-        }
-
-        return UiBook(
-          id: b.id,
-          title: b.title,
-          author: b.author,
-          description: b.description ?? '',
-          coverUrl: b.coverImage,
-          ebookUrl: ebookUrl,
-          categoryIds: b.categoryIds,
-          resources: files,
-        );
-      })
-      .toList(growable: false);
-});
 
 class CategoryBooksPage extends ConsumerWidget {
   final String categoryId;
@@ -137,7 +101,7 @@ class CategoryBooksPage extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
+                          color: Colors.grey.withValues(alpha: 0.1),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),

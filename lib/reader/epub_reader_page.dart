@@ -1063,7 +1063,9 @@ class _AlignBtn extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           side: BorderSide(color: selected ? Colors.green : Colors.black26),
           backgroundColor:
-              selected ? Colors.green.withOpacity(.08) : Colors.transparent,
+              selected
+                  ? Colors.green.withValues(alpha: .08)
+                  : Colors.transparent,
         ),
         child: Icon(icon),
       ),
